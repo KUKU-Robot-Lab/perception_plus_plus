@@ -1,0 +1,3 @@
+[submodule "external/foundationpose_plus_plus"]
+	path = external/foundationpose_plus_plus
+	url = https://github.com/teal024/FoundationPose-plus-plus.git

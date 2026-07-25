@@ -1,0 +1,11 @@
+min_depth_m: 0.15
+max_depth_m: 2.5
+min_mask_area_px: 500
+min_valid_depth_ratio: 0.6
+max_translation_m: 0.25
+max_rotation_deg: 75.0
+workspace_min_xyz: [-1.5, -1.5, 0.1]
+workspace_max_xyz: [1.5, 1.5, 2.5]
+max_invalid_frames: 3
+recovery_interval_frames: 15
+reinitialize_valid_frames: 3

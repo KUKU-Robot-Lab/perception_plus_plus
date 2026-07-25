@@ -1,0 +1,16 @@
+cup_tracking:
+  ros__parameters:
+    rgb_topic: /camera/camera/color/image_raw
+    depth_topic: /camera/camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/camera/color/camera_info
+    pose_topic: /perception_plus_plus/cup/pose
+    status_topic: /perception_plus_plus/cup/tracking_status
+    child_frame_id: cup
+    mesh_path: assets/meshes/cup.obj
+    mesh_scale_to_meters: 1.0
+    yolo_weights: models/yolo/yolo11n.pt
+    cup_class_id: 41
+    yolo_confidence: 0.5
+    tracking_config: config/cup_tracking.yaml
+    sync_slop_seconds: 0.04
+    sync_queue_size: 10

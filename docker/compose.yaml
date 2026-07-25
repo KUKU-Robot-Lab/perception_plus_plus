@@ -1,0 +1,24 @@
+services:
+  humble:
+    build:
+      context: ..
+      dockerfile: docker/humble/Dockerfile
+    image: perception-plus-plus:humble
+    network_mode: host
+    ipc: host
+    volumes:
+      - ../models:/workspace/perception_plus_plus/models:ro
+      - ../assets/meshes:/workspace/perception_plus_plus/assets/meshes:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+  jazzy:
+    extends: humble
+    build:
+      context: ..
+      dockerfile: docker/jazzy/Dockerfile
+    image: perception-plus-plus:jazzy
+

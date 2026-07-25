@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+build/
+install/
+log/
+.colcon/
+models/
+recordings/
+assets/meshes/*
+!assets/meshes/.gitkeep
+!assets/meshes/cup.obj
+!assets/meshes/cup.mtl
+!assets/meshes/texture.png
+reports/*.json
