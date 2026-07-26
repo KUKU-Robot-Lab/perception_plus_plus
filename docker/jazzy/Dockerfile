@@ -18,7 +18,7 @@ RUN wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/
     rm -rf /var/lib/apt/lists/* /tmp/cuda-keyring.deb
 ENV CUDA_HOME=/usr/local/cuda-12.4
 ENV PATH=/usr/local/cuda-12.4/bin:${PATH}
-ENV TORCH_CUDA_ARCH_LIST=8.9
+ENV TORCH_CUDA_ARCH_LIST="8.6;8.9"
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 COPY docker/jazzy/requirements.lock /tmp/requirements.lock
@@ -33,7 +33,7 @@ COPY scripts/build_fpplusplus.sh scripts/build_fpplusplus.sh
 RUN python3 -m pip install --break-system-packages --no-cache-dir .
 RUN bash scripts/build_fpplusplus.sh
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && colcon build \
-    --base-paths ros_ws/src --install-base /opt/perception_plus_plus
+    --base-paths ros_ws/src --install-base /opt/perception_plus_plus --merge-install
 COPY . .
 RUN chown -R perception:perception /workspace/perception_plus_plus
 USER perception

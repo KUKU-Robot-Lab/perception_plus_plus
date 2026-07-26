@@ -52,8 +52,8 @@ docker build -f docker/jazzy/Dockerfile -t perception-plus-plus:jazzy .
 ```
 
 The Dockerfiles install the CUDA toolkit matching their locked PyTorch wheel
-and build the model-based FoundationPose extensions with compute capability
-8.9 for the RTX 4070. The NVIDIA driver remains a host dependency. The build
+and build the model-based FoundationPose extensions for
+compute capabilities 8.6 (RTX 3090) and 8.9 (RTX 4070 Laptop). The NVIDIA driver remains a host dependency. The build
 downloads PyTorch3D and NVDiffRast source, so archive or mirror those sources
 before producing an air-gapped release. Validate with:
 
