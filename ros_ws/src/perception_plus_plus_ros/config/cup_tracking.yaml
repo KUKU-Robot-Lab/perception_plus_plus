@@ -1,5 +1,6 @@
 cup_tracking:
   ros__parameters:
+    project_root: .
     rgb_topic: /camera/camera/color/image_raw
     depth_topic: /camera/camera/aligned_depth_to_color/image_raw
     camera_info_topic: /camera/camera/color/camera_info
@@ -8,7 +9,7 @@ cup_tracking:
     child_frame_id: cup
     mesh_path: assets/meshes/cup.obj
     mesh_scale_to_meters: 1.0
-    yolo_weights: models/yolo/yolo11n.pt
+    yolo_weights: models/yolo/yolo11n-seg.pt
     cup_class_id: 41
     yolo_confidence: 0.5
     tracking_config: config/cup_tracking.yaml

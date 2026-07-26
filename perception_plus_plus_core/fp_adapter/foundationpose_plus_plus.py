@@ -103,7 +103,7 @@ class _UpstreamEngine:
     def _link_models(root: Path, model_root: Path) -> None:
         mappings = {
             model_root / "foundationpose": root / "FoundationPose" / "weights",
-            model_root / "cutie": root / "Cutie" / "cutie" / "weights",
+            model_root / "cutie": root / "Cutie" / "weights",
         }
         for source_root, target_root in mappings.items():
             if not source_root.is_dir():

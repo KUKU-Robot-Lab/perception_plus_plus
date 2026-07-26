@@ -21,4 +21,3 @@ services:
       context: ..
       dockerfile: docker/jazzy/Dockerfile
     image: perception-plus-plus:jazzy
-

@@ -1,11 +1,14 @@
 # D435i Camera Validation
 
-Start the RealSense driver with aligned depth enabled, then start the tracker:
+Start the RealSense driver and tracker with the validated profile:
 
 ```bash
-ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true
-ros2 launch perception_plus_plus_ros cup_tracking.launch.py
+ros2 launch perception_plus_plus_ros realsense_cup_tracking.launch.py \
+  project_root:="$PWD"
 ```
+
+This selects synchronized, aligned 640x480 RGB-D at 30 Hz. The tracker
+subscribes with the ROS sensor-data QoS profile.
 
 Before accepting results, verify:
 
@@ -22,4 +25,3 @@ Record FPS, end-to-end callback latency, initialization latency, peak/steady
 VRAM, and recovery duration. Those measurements become the first regression
 baseline; this repository intentionally does not invent target values before
 hardware measurement.
-

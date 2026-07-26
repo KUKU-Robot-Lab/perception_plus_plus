@@ -25,6 +25,7 @@ class CupTrackingNode(Node):
     def __init__(self) -> None:
         super().__init__("cup_tracking")
         defaults = {
+            "project_root": str(Path.cwd()),
             "rgb_topic": "/camera/camera/color/image_raw",
             "depth_topic": "/camera/camera/aligned_depth_to_color/image_raw",
             "camera_info_topic": "/camera/camera/color/camera_info",
@@ -33,7 +34,7 @@ class CupTrackingNode(Node):
             "child_frame_id": "cup",
             "mesh_path": "assets/meshes/cup.obj",
             "mesh_scale_to_meters": 1.0,
-            "yolo_weights": "models/yolo/yolo11n.pt",
+            "yolo_weights": "models/yolo/yolo11n-seg.pt",
             "cup_class_id": 41,
             "yolo_confidence": 0.5,
             "tracking_config": "config/cup_tracking.yaml",
@@ -43,12 +44,17 @@ class CupTrackingNode(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         get = lambda name: self.get_parameter(name).value
-        config = TrackingConfig.from_yaml(get("tracking_config"))
+        project_root = Path(get("project_root")).expanduser().resolve()
+        resolve = lambda value: str(
+            Path(value) if Path(value).is_absolute() else project_root / value)
+        config = TrackingConfig.from_yaml(resolve(get("tracking_config")))
         self.manager = TrackingManager(
-            FoundationPosePlusPlusAdapter(),
-            YoloCupDetector(get("yolo_weights"), get("cup_class_id"),
+            FoundationPosePlusPlusAdapter(
+                upstream_root=project_root / "external/foundationpose_plus_plus",
+                model_root=project_root / "models"),
+            YoloCupDetector(resolve(get("yolo_weights")), get("cup_class_id"),
                             get("yolo_confidence")),
-            MeshSpec(get("mesh_path"), get("mesh_scale_to_meters")), config)
+            MeshSpec(resolve(get("mesh_path")), get("mesh_scale_to_meters")), config)
         self.bridge = CvBridge()
         self.child_frame_id = get("child_frame_id")
         self.pose_publisher = self.create_publisher(PoseStamped, get("pose_topic"), 10)
@@ -119,4 +125,3 @@ def main(args=None) -> None:
     finally:
         node.destroy_node()
         rclpy.shutdown()
-

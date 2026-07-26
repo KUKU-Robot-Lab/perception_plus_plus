@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from perception_plus_plus_core.assets.manifest import load_manifest, verify_file
+from perception_plus_plus_core.assets.manifest import verify_lock
 from perception_plus_plus_core.assets.upstream import check_upstream_revision
 from perception_plus_plus_core.validation.readiness import CheckResult, write_report
 
@@ -33,11 +33,8 @@ def main() -> int:
     checks = []
     upstream = check_upstream_revision(ROOT / "external/foundationpose_plus_plus", "58aa715")
     checks.append(CheckResult("upstream_revision", upstream.status, True, upstream.detail))
-    manifest = load_manifest(ROOT / "assets/model_manifests/models.json")
-    for entry in manifest.models:
-        result = verify_file(entry, ROOT / "models")
-        checks.append(CheckResult(f"model_{entry.name}", result.status,
-                                  entry.required, result.detail))
+    result = verify_lock(ROOT / "models/models.lock.json", ROOT / "models")
+    checks.append(CheckResult("model_lock", result.status, True, result.detail))
     checks.append(command_check("cpu_tests", ["bash", "scripts/run_tests.sh"]))
     checks.append(command_check("ros_colcon", [
         "colcon", "build", "--base-paths", "ros_ws/src",

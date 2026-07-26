@@ -22,16 +22,26 @@ ENV TORCH_CUDA_ARCH_LIST=8.9
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 COPY docker/humble/requirements.lock /tmp/requirements.lock
-RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.lock
-RUN useradd --create-home --uid 1000 --shell /bin/bash perception
+# Every later pip call — the project, nvdiffrast, pytorch3d, the FoundationPose
+# runtime set — obeys the lock. Without this, transitive dependencies upgrade
+# NumPy past the version the apt-built cv_bridge was compiled against.
+ENV PIP_CONSTRAINT=/tmp/requirements.lock
+RUN python3 -m pip install --ignore-installed --no-cache-dir -r /tmp/requirements.lock
+RUN useradd --create-home --uid 10001 --shell /bin/bash perception
 WORKDIR /workspace/perception_plus_plus
 COPY pyproject.toml README.md ./
 COPY perception_plus_plus_core perception_plus_plus_core
-COPY ros_ws/src ros_ws/src
 COPY external/foundationpose_plus_plus external/foundationpose_plus_plus
+COPY docker/foundationpose-runtime.requirements docker/foundationpose-runtime.requirements
 COPY scripts/build_fpplusplus.sh scripts/build_fpplusplus.sh
 RUN python3 -m pip install --no-cache-dir .
-RUN bash scripts/build_fpplusplus.sh
+RUN bash scripts/build_fpplusplus.sh nvdiffrast
+RUN bash scripts/build_fpplusplus.sh pytorch3d
+RUN bash scripts/build_fpplusplus.sh requirements
+RUN bash scripts/build_fpplusplus.sh extensions
+# ROS sources land after the expensive CUDA/pip stages so that ROS-only edits
+# rebuild the colcon layer alone.
+COPY ros_ws/src ros_ws/src
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && colcon build \
     --base-paths ros_ws/src --install-base /opt/perception_plus_plus
 COPY . .

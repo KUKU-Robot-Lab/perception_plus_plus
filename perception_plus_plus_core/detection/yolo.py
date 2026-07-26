@@ -35,9 +35,17 @@ class YoloCupDetector:
         results = self.model(rgb)
         detections: list[Detection] = []
         for result in results:
-            if result.boxes is None or result.masks is None:
+            if result.boxes is None:
                 continue
             classes = _numpy(result.boxes.cls).astype(int)
+            if classes.size == 0:
+                # An empty frame is not a checkpoint problem; segmentation
+                # models report no masks when they found nothing to segment.
+                continue
+            if result.masks is None:
+                raise ModelLoadError(
+                    f"YOLO checkpoint {self.weights} has detections but no instance "
+                    "segmentation masks; use a *-seg.pt checkpoint")
             confidences = _numpy(result.boxes.conf)
             boxes = _numpy(result.boxes.xyxy)
             masks = _numpy(result.masks.data)
@@ -55,4 +63,3 @@ class YoloCupDetector:
                 detections.append(Detection(mask, float(confidence), int(class_id),
                                             tuple(float(v) for v in boxes[index])))
         return sorted(detections, key=lambda item: item.confidence, reverse=True)
-

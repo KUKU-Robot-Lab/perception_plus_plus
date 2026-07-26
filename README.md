@@ -1,6 +1,7 @@
 # perception_plus_plus
 
-FoundationPose++-based single-cup 6D tracking for ROS 2 Humble and Jazzy.
+FoundationPose++-based single-cup 6D tracking for ROS 2, packaged as separate
+Humble and Jazzy images. This workstation runs Jazzy.
 The system is designed for aligned RealSense D435i RGB-D input and keeps all
 tracking logic in a ROS-independent Python core.
 
@@ -16,6 +17,20 @@ bash scripts/run_tests.sh
 python3 scripts/pre_camera_check.py
 ```
 
-The readiness command remains `NOT_READY` until real model digests/files,
-CUDA/FP++ imports, replay data, and the required target containers have been
-validated. See `docs/validation.md` for the exact contract.
+Install and lock the official public model set once:
+
+```bash
+python3 -m pip install -e '.[models]'
+python3 scripts/bootstrap_models.py
+```
+
+After building and sourcing the ROS workspace, start the validated D435i
+profile and tracker together:
+
+```bash
+ros2 launch perception_plus_plus_ros realsense_cup_tracking.launch.py \
+  project_root:="$PWD"
+```
+
+The readiness command remains `NOT_READY` until the model lock, CUDA/FP++
+imports, live initialization, and required target containers are validated.

@@ -14,3 +14,7 @@ assets/meshes/*
 !assets/meshes/cup.mtl
 !assets/meshes/texture.png
 reports/*.json
+reports/*.log
+reports/*.png
+reports/*.npz
+reports/*.txt

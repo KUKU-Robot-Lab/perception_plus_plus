@@ -12,6 +12,7 @@ dependencies = ["numpy>=1.24", "PyYAML>=6"]
 [project.optional-dependencies]
 test = ["pytest>=7"]
 yolo = ["ultralytics>=8.2"]
+models = ["gdown==5.2.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -19,4 +20,3 @@ addopts = "-ra"
 
 [tool.setuptools.packages.find]
 include = ["perception_plus_plus_core*"]
-
