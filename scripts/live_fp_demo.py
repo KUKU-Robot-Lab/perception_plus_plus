@@ -6,8 +6,14 @@ FP++ register, then FP++ track() every frame. The RGB view is annotated with
 the tracked mask outline, a 3D pose axis, and the cup's camera-frame distance.
 
 Runs inside the perception-plus-plus container. Keys: q=quit, r=re-initialize.
+
+FoundationPose prints dozens of lines per frame from Python AND its C/CUDA
+extensions; left alone they throttle the loop to a few fps and tracking loses
+fast motion. We silence fd 1 (real stdout) for the whole loop and send our own
+status to stderr, so the tracker runs at its true ~15 fps.
 """
 import argparse
+import os
 import sys
 import time
 
@@ -24,6 +30,16 @@ from perception_plus_plus_core.types import (  # noqa: E402
 )
 
 CUP_CLASS = 41  # COCO 'cup'
+
+
+def log(msg):
+    print(msg, file=sys.stderr, flush=True)
+
+
+def silence_stdout():
+    """Redirect fd 1 to /dev/null (catches FP's Python + C/CUDA chatter)."""
+    sys.stdout.flush()
+    os.dup2(os.open(os.devnull, os.O_WRONLY), 1)
 
 
 def cup_bbox(model, rgb, conf):
@@ -96,10 +112,12 @@ def main() -> int:
     mesh = MeshSpec(args.mesh, 1.0)
     cv2.namedWindow("FoundationPose++ live", cv2.WINDOW_NORMAL)
 
+    log("live demo started (q=quit, r=reinit)")
+    silence_stdout()   # from here on FP++ chatter goes to /dev/null
+
     state = "detect"   # detect -> track
     pose = mask = None
-    t_prev, fps = time.time(), 0.0
-    print("live demo started (q=quit, r=reinit)", flush=True)
+    t_prev, fps, frame_i = time.time(), 0.0, 0
 
     try:
         while True:
@@ -123,10 +141,9 @@ def main() -> int:
                             FrameBundle(rgb, depth, intr, 0, "camera"), m, mesh)
                         pose, mask = r.object_to_camera, r.mask
                         state = "track"
-                        print("initialized", flush=True)
+                        log("initialized")
                     except Exception as e:
-                        cv2.putText(view, f"init failed: {e}"[:60], (10, 60),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        log(f"init failed: {e}")
                 cv2.putText(view, "DETECTING cup...", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
             else:
@@ -144,6 +161,11 @@ def main() -> int:
             now = time.time()
             fps = 0.9 * fps + 0.1 / max(now - t_prev, 1e-3)
             t_prev = now
+            frame_i += 1
+            if frame_i % 30 == 0:
+                log(f"{state} {fps:.1f}fps"
+                    + ("" if pose is None else f" z={pose[2,3]:.3f}m"))
+
             cv2.imshow("FoundationPose++ live", view)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
@@ -151,7 +173,7 @@ def main() -> int:
             if key == ord("r"):
                 adapter.reset()
                 state = "detect"
-                print("reinit requested", flush=True)
+                log("reinit requested")
     finally:
         pipeline.stop()
         cv2.destroyAllWindows()
