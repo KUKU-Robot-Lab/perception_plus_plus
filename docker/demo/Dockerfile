@@ -17,6 +17,14 @@ RUN cd /workspace/perception_plus_plus && mkdir -p \
       external/foundationpose_plus_plus/Cutie/weights && \
     cp models/cutie/cutie-base-mega.pth models/cutie/coco_lvis_h18_itermask.pth \
       external/foundationpose_plus_plus/Cutie/weights/
+# Pre-cache the torchvision ResNet backbones Cutie pulls on first init, so a
+# fresh container starts in seconds instead of downloading ~150 MB.
+RUN mkdir -p /home/perception/.cache/torch/hub/checkpoints && \
+    wget -q https://download.pytorch.org/models/resnet50-19c8e357.pth \
+      -O /home/perception/.cache/torch/hub/checkpoints/resnet50-19c8e357.pth && \
+    wget -q https://download.pytorch.org/models/resnet18-5c106cde.pth \
+      -O /home/perception/.cache/torch/hub/checkpoints/resnet18-5c106cde.pth && \
+    chown -R perception:perception /home/perception/.cache
 COPY scripts/live_fp_demo.py /workspace/perception_plus_plus/scripts/live_fp_demo.py
 USER perception
 CMD ["bash"]
