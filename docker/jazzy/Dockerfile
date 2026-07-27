@@ -9,6 +9,7 @@ ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git libeigen3-dev libgl1 libglib2.0-0 \
+    libboost-system-dev libboost-program-options-dev pybind11-dev \
     python3-colcon-common-extensions python3-dev python3-pip wget \
     ros-${ROS_DISTRO}-cv-bridge ros-${ROS_DISTRO}-message-filters \
     ros-${ROS_DISTRO}-tf2-ros && rm -rf /var/lib/apt/lists/*
