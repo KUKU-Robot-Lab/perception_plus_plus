@@ -36,6 +36,7 @@ class CupTrackingNode(Node):
             "yolo_weights": "models/yolo/yolo11n.pt",
             "cup_class_id": 41,
             "yolo_confidence": 0.5,
+            "detection_pick": "confidence",
             "tracking_config": "config/cup_tracking.yaml",
             "sync_slop_seconds": 0.04,
             "sync_queue_size": 10,
@@ -47,7 +48,7 @@ class CupTrackingNode(Node):
         self.manager = TrackingManager(
             FoundationPosePlusPlusAdapter(),
             YoloCupDetector(get("yolo_weights"), get("cup_class_id"),
-                            get("yolo_confidence")),
+                            get("yolo_confidence"), pick=get("detection_pick")),
             MeshSpec(get("mesh_path"), get("mesh_scale_to_meters")), config)
         self.bridge = CvBridge()
         self.child_frame_id = get("child_frame_id")

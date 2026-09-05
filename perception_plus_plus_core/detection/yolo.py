@@ -18,8 +18,11 @@ def _numpy(value: Any) -> np.ndarray:
 
 class YoloCupDetector:
     def __init__(self, weights: str | Path, class_id: int, confidence: float,
-                 model: Any | None = None) -> None:
+                 model: Any | None = None, pick: str = "confidence") -> None:
         self.weights, self.class_id, self.confidence = str(weights), class_id, confidence
+        if pick not in ("confidence", "dark", "bright", "red", "blue"):
+            raise ValueError(f"unknown pick strategy: {pick}")
+        self.pick = pick
         if model is None:
             try:
                 from ultralytics import YOLO
@@ -54,5 +57,21 @@ class YoloCupDetector:
                                       interpolation=cv2.INTER_NEAREST).astype(bool)
                 detections.append(Detection(mask, float(confidence), int(class_id),
                                             tuple(float(v) for v in boxes[index])))
-        return sorted(detections, key=lambda item: item.confidence, reverse=True)
+        detections.sort(key=lambda item: item.confidence, reverse=True)
+        if self.pick != "confidence" and len(detections) > 1:
+            if self.pick in ("red", "blue"):
+                ch = 0 if self.pick == "red" else 2
+                def _dom(det):
+                    if not det.mask.any():
+                        return -255.0
+                    m = rgb[det.mask].astype(float)
+                    other = np.delete(m, ch, axis=1).max(axis=1)
+                    return float((m[:, ch] - other).mean())
+                detections.sort(key=_dom, reverse=True)
+            else:
+                gray = rgb.mean(axis=2)
+                detections.sort(
+                    key=lambda det: float(gray[det.mask].mean()) if det.mask.any() else 255.0,
+                    reverse=self.pick == "bright")
+        return detections
 

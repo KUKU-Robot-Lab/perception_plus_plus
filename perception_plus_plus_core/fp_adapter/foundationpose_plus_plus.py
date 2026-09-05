@@ -48,6 +48,9 @@ class FoundationPosePlusPlusAdapter:
                 frame.rgb, frame.depth, mask, frame.intrinsics, mesh)
             return self._result(value, frame.timestamp_ns)
         except Exception as error:
+            import traceback
+            print("[fp_adapter] initialize failed:", repr(error), file=sys.stderr, flush=True)
+            traceback.print_exc()
             raise classify_exception(error) from error
 
     def track(self, frame: FrameBundle) -> PoseResult:
@@ -58,9 +61,11 @@ class FoundationPosePlusPlusAdapter:
             raise classify_exception(error) from error
 
     def reset(self) -> None:
+        # ★엔진을 버리지 않는다(2026-09-03). 버리면 다음 initialize 가 FoundationPose +
+        #   RasterizeCudaContext 를 다시 만들다 실패해 재등록마다 PERCEPTIONERROR 가 났다.
+        #   추적 상태(칼만·마스크)만 비우고 모델·CUDA 컨텍스트는 재사용한다.
         if self.engine is not None:
             self.engine.reset()
-        self.engine = None if isinstance(self.engine, _UpstreamEngine) else self.engine
 
 
 class _UpstreamEngine:
@@ -125,11 +130,18 @@ class _UpstreamEngine:
 
     def initialize(self, rgb, depth, mask, intrinsics, mesh_spec):
         mesh = self._load_mesh(mesh_spec)
-        self.estimator = self.FoundationPose(
-            model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh,
-            scorer=self.Scorer(), refiner=self.Refiner(),
-            glctx=self.dr.RasterizeCudaContext())
-        self.cutie = self.Cutie()
+        if self.estimator is None:
+            self.estimator = self.FoundationPose(
+                model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh,
+                scorer=self.Scorer(), refiner=self.Refiner(),
+                glctx=self.dr.RasterizeCudaContext())
+            self.cutie = self.Cutie()
+        else:
+            # 재등록(LOST 복구): FoundationPose/RasterizeCudaContext 를 다시 만들면
+            # 프로세스가 즉사한다(CUDA 이중 컨텍스트, 2026-09-02 재현). 기존 모델을
+            # 재사용하고 메시·추적 상태만 리셋한다.
+            self.estimator.reset_object(model_pts=mesh.vertices,
+                                        model_normals=mesh.vertex_normals, mesh=mesh)
         self.kalman = self.Kalman(self.noise)
         self.mask = np.asarray(mask).astype(bool)
         pose = self.estimator.register(K=intrinsics.matrix, rgb=rgb, depth=depth,
@@ -171,7 +183,8 @@ class _UpstreamEngine:
         return pose, self.mask
 
     def reset(self):
-        self.estimator = self.cutie = self.kalman = None
+        # estimator·cutie 는 유지(재등록 시 reset_object + cutie.initialize 로 재사용).
+        self.kalman = None
         self.kf_mean = self.kf_covariance = self.mask = None
         if self.torch.cuda.is_available():
             self.torch.cuda.empty_cache()

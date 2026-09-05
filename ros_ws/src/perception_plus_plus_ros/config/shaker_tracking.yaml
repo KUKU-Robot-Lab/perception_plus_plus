@@ -1,0 +1,26 @@
+# shaker(검은 칵테일 셰이커) 추적 파라미터 — 2026-09-02 신설 (2물체 Step 1)
+# ★최상위 키는 노드 이름(cup_tracking)과 일치해야 파라미터가 실린다.
+#   launch 수정 없이 parameters_file:= 로 이 파일을 넘긴다 (컨테이너 분리 fpp_shaker).
+# ★cup_class_id=39(COCO bottle) 는 임시 매핑 — COCO 에 shaker 클래스가 없다.
+#   인식 안 되면 75(vase)·41(cup) 순서로 시도, 그래도 안 되면 seg 파인튜닝 필요.
+# ★mesh = sim 자산 메시 그대로(shaker_sim.ply, m 단위, 원점=sim body 프레임 = 바닥+92.1mm).
+#   생성: hdgp/scripts/tools/export_shaker_sim_mesh.py. relay cad_to_body 는 항등.
+#   옛 조립본 CAD(shaker_color.ply, 238mm·바닥 원점)는 shaker_tracking_full.yaml 에 보존 —
+#   실물은 뚜껑 없는 열린 몸통이라 형상·원점이 달라 z −11mm 파묻힘·떨림 10배(09.03 실측).
+cup_tracking:
+  ros__parameters:
+    rgb_topic: /camera/camera/color/image_raw
+    depth_topic: /camera/camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/camera/color/camera_info
+    pose_topic: /perception_plus_plus/shaker/pose
+    status_topic: /perception_plus_plus/shaker/tracking_status
+    child_frame_id: shaker
+    mesh_path: assets/meshes/shaker_sim.ply
+    mesh_scale_to_meters: 1.0
+    yolo_weights: models/yolo/yolov8m-seg.pt
+    cup_class_id: 41
+    detection_pick: blue
+    yolo_confidence: 0.35
+    tracking_config: config/cup_tracking.yaml
+    sync_slop_seconds: 0.04
+    sync_queue_size: 10
