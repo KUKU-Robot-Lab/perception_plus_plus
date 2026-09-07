@@ -108,7 +108,11 @@ class _UpstreamEngine:
     def _link_models(root: Path, model_root: Path) -> None:
         mappings = {
             model_root / "foundationpose": root / "FoundationPose" / "weights",
-            model_root / "cutie": root / "Cutie" / "cutie" / "weights",
+            # ★2026-09-07: Cutie 다운로더는 cutie/utils/../../weights = **Cutie/weights** 를 본다.
+            #   여기에 Cutie/cutie/weights 로 걸어두면 한 단계 깊어 못 찾고, 없다고 판단해
+            #   GitHub 에서 받으려다 컨테이너에 DNS 가 없어 죽는다. 그러면 estimator 만 만들어진
+            #   반쪽 엔진이 남아 이후 모든 initialize 가 cutie=None 으로 실패한다.
+            model_root / "cutie": root / "Cutie" / "weights",
         }
         for source_root, target_root in mappings.items():
             if not source_root.is_dir():
@@ -130,12 +134,15 @@ class _UpstreamEngine:
 
     def initialize(self, rgb, depth, mask, intrinsics, mesh_spec):
         mesh = self._load_mesh(mesh_spec)
+        # ★cutie 는 estimator 와 **따로** 확인한다(2026-09-07). 예전엔 첫 initialize 에서만
+        #   만들어서, Cutie() 가 한 번 실패하면 estimator 만 남은 반쪽 엔진이 영구히 남았다.
+        if self.cutie is None:
+            self.cutie = self.Cutie()
         if self.estimator is None:
             self.estimator = self.FoundationPose(
                 model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh,
                 scorer=self.Scorer(), refiner=self.Refiner(),
                 glctx=self.dr.RasterizeCudaContext())
-            self.cutie = self.Cutie()
         else:
             # 재등록(LOST 복구): FoundationPose/RasterizeCudaContext 를 다시 만들면
             # 프로세스가 즉사한다(CUDA 이중 컨텍스트, 2026-09-02 재현). 기존 모델을
