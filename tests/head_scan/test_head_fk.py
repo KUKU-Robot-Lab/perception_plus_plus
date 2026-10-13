@@ -86,3 +86,18 @@ def test_positive_encoder_pan_turns_camera_forward_axis_toward_plus_y():
 def test_neck_to_camera_is_read_only():
     with pytest.raises(ValueError):
         head_fk.load_neck_to_camera()[0, 0] = 9.0
+
+
+def test_t_base_cam_accepts_alternative_extrinsics_file(tmp_path):
+    import numpy as np
+
+    from perception_plus_plus_core.head_scan import head_fk
+
+    shifted = head_fk.load_neck_to_camera().copy()
+    shifted[0, 3] += 0.01
+    rows = "\n".join("    - [" + ", ".join(map(str, r)) + "]" for r in shifted)
+    path = tmp_path / "alt.yaml"
+    path.write_text(f"neck_to_camera:\n  matrix:\n{rows}\n", encoding="utf-8")
+    base = head_fk.t_base_cam(10.0, -20.0)
+    alt = head_fk.t_base_cam(10.0, -20.0, path)
+    assert np.linalg.norm(alt[:3, 3] - base[:3, 3]) == __import__("pytest").approx(0.01, abs=1e-9)

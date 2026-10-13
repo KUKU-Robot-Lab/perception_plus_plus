@@ -117,9 +117,10 @@ def t_base_neck(pan_encoder_deg: float, tilt_encoder_deg: float) -> np.ndarray:
     return transform
 
 
-def t_base_cam(pan_encoder_deg: float, tilt_encoder_deg: float) -> np.ndarray:
-    """`base ← camera_color_optical_frame` 4x4."""
-    return t_base_neck(pan_encoder_deg, tilt_encoder_deg) @ load_neck_to_camera()
+def t_base_cam(pan_encoder_deg: float, tilt_encoder_deg: float,
+               extrinsics_yaml: Path | str = EXTRINSICS_YAML) -> np.ndarray:
+    """`base ← camera_color_optical_frame` 4x4. hand-eye 후보 파일을 `extrinsics_yaml` 로 바꿔 비교할 수 있다."""
+    return t_base_neck(pan_encoder_deg, tilt_encoder_deg) @ load_neck_to_camera(Path(extrinsics_yaml))
 
 
 def quat_wxyz_from_matrix(rot: np.ndarray) -> np.ndarray:

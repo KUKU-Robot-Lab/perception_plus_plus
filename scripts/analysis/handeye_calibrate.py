@@ -100,8 +100,25 @@ def mean_err(x, f, model):
     return np.linalg.norm(bolt_err_mm(x, f, model), axis=1).mean()
 
 
+def write_candidate(path, x, note):
+    """보정된 `T_neck_cam' = T_neck_cam ∘ corr` 를 head_extrinsics.yaml 과 같은 형식의 후보 파일로 쓴다(원본은 고치지 않는다)."""
+    corr = np.eye(4)
+    corr[:3, :3] = cv2.Rodrigues(x[:3])[0]
+    corr[:3, 3] = x[3:6]
+    matrix = head_fk.load_neck_to_camera() @ corr
+    rows = "\n".join("    - [" + ", ".join(f"{v:+.9f}" for v in row) + "]" for row in matrix)
+    Path(path).write_text(f"# hand-eye 후보 — {note}\n# T_neck_cam' = T_neck_cam(v2) ∘ corr. 적용은 사용자 소유 sim2real/config 에서 합의 후.\n"
+                          f"neck_to_camera:\n  matrix:\n{rows}\n", encoding="utf-8")
+
+
 def main():
-    frames, cups = load_frames(sys.argv[1:])
+    args = sys.argv[1:]
+    out = None
+    if "--write" in args:
+        i = args.index("--write")
+        out = args[i + 1]
+        del args[i:i + 2]
+    frames, cups = load_frames(args)
     print(f"볼트 프레임 {len(frames)}개, 컵 관측 {len(cups)}개 (낡은 값 제외)")
     model = "A"  # 모델 B(영점 오프셋 추가)는 A 와 같은 결과로 수렴해 식별되지 않았다(2026-10-13)
     x0 = np.zeros(6)
@@ -115,6 +132,9 @@ def main():
         print("  회전 deg", np.round(np.degrees(x[:3]), 3).tolist(), "이동 mm", np.round(x[3:6] * 1000, 2).tolist())
         for name, (n, spread, mean) in cup_spread_mm(x, cups, model).items():
             print(f"  컵 {name}: 관측 {n}개 · 평균에서 최대 {spread:.1f} mm · 평균 {np.round(mean, 4).tolist()}")
+    if out:
+        write_candidate(out, x, f"볼트 {len(frames)}프레임 + 컵 일관성(가중치 1.0) 맞춤, 교차검증 {np.mean(loo):.1f} mm")
+        print(f"후보 파일 기록: {out}")
     for f, b in zip(frames, base):
         print(f"  {f['tag']:>22} pan {f['pan']:+7.2f} tilt {f['tilt']:+6.2f}: 보정 전 {b:5.1f} mm")
 
