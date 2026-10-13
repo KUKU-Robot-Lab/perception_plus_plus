@@ -1,0 +1,54 @@
+import cv2
+import numpy as np
+import pytest
+import trimesh
+
+from perception_plus_plus_core.head_scan import head_fk, silhouette_fit as sf, standing_pose as sp
+
+K = np.array([[606.6, 0, 320.0], [0, 605.7, 240.6], [0, 0, 1.0]])
+HEIGHT = 0.13
+ORIGIN_ABOVE_BOTTOM = HEIGHT / 2
+BLUE_RGB = (30, 60, 220)  # OpenCV hue 약 118
+
+
+def _mesh():
+    m = trimesh.creation.cylinder(radius=0.0354, height=HEIGHT, sections=48)
+    return m.vertices, m.faces
+
+
+def _obs(pan, truth_xy, init_offset=(0.01, -0.008)):
+    verts, faces = _mesh()
+    t_bc = head_fk.t_base_cam(pan, -20.0)
+    sil = sf.render_silhouette(verts + np.r_[truth_xy, sp.TABLE_TOP_Z + ORIGIN_ABOVE_BOTTOM], faces, t_bc, K, (480, 640))
+    rgb = np.full((480, 640, 3), 20, np.uint8)
+    rgb[sil] = BLUE_RGB
+    return sp.StandingObs(rgb, K, pan, -20.0, (truth_xy[0] + init_offset[0], truth_xy[1] + init_offset[1]))
+
+
+def _hue():
+    return float(cv2.cvtColor(np.array([[BLUE_RGB]], np.uint8), cv2.COLOR_RGB2HSV)[0, 0, 0])
+
+
+def test_estimate_standing_recovers_position_and_fixes_z():
+    truth = (0.22, 0.06)
+    verts, faces = _mesh()
+    est = sp.estimate_standing([_obs(p, truth) for p in (-30.0, 0.0, 30.0)], verts, faces, ORIGIN_ABOVE_BOTTOM, _hue())
+    assert est is not None and est.n_used == 3
+    assert (est.x, est.y) == pytest.approx(truth, abs=2e-3)
+    assert est.z == pytest.approx(0.205 + ORIGIN_ABOVE_BOTTOM)
+    assert est.spread_m < 3e-3
+
+
+def test_estimate_standing_drops_outlier_observation():
+    truth = (0.22, 0.06)
+    verts, faces = _mesh()
+    observations = [_obs(p, truth) for p in (-30.0, 0.0, 30.0)] + [_obs(10.0, (0.25, 0.06), init_offset=(0, 0))]
+    est = sp.estimate_standing(observations, verts, faces, ORIGIN_ABOVE_BOTTOM, _hue())
+    assert est.n_rejected == 1
+    assert (est.x, est.y) == pytest.approx(truth, abs=2e-3)
+
+
+def test_estimate_standing_returns_none_without_a_usable_mask():
+    verts, faces = _mesh()
+    blank = sp.StandingObs(np.full((480, 640, 3), 20, np.uint8), K, 0.0, -20.0, (0.22, 0.06))
+    assert sp.estimate_standing([blank], verts, faces, ORIGIN_ABOVE_BOTTOM, _hue()) is None
