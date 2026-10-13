@@ -73,3 +73,25 @@ def drop_stale(records: list[dict], min_move_deg: float = 0.5) -> list[dict]:
             last[name] = (raw["pos"], rec["measured"])
         kept.append({**rec, "raw_cam": fresh})
     return kept
+
+
+def parse_pose_list(text: str) -> list[tuple[float, float]]:
+    """`15,-20;-15,-20` → [(15.0, -20.0), (-15.0, -20.0)]."""
+    poses = []
+    for item in text.split(";"):
+        parts = item.split(",")
+        if len(parts) != 2:
+            raise ValueError(f"자세는 'pan,tilt' 형식이어야 한다: {item!r}")
+        poses.append((float(parts[0]), float(parts[1])))
+    return poses
+
+
+def validate_poses(poses: list[tuple[float, float]], max_tilt_deg: float = DEFAULT_MAX_TILT_DEG) -> None:
+    """모든 자세가 유한하고 tilt 가 max_tilt_deg 이하인지 — 하나라도 어긋나면 실행 전에 거부한다."""
+    if not poses:
+        raise ValueError("자세가 없다")
+    for pan, tilt in poses:
+        if not (math.isfinite(pan) and math.isfinite(tilt)):
+            raise ValueError(f"유한하지 않은 각도: {(pan, tilt)}")
+        if tilt > max_tilt_deg:
+            raise ValueError(f"tilt {tilt}° 는 중력 방향 한계 {max_tilt_deg}° 를 넘는다")
