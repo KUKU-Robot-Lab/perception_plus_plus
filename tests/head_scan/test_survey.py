@@ -82,3 +82,10 @@ def test_drop_stale_removes_identical_raw_pose_seen_at_a_different_head_pose():
     kept = survey.drop_stale(records)
     assert [sorted(r["raw_cam"]) for r in kept] == [["cup"], [], ["cup"]]
     assert records[1]["raw_cam"]  # 원본 불변
+
+
+def test_drop_stale_compares_against_every_earlier_value_not_only_the_last():
+    rec = lambda i, pan, pos: {"index": i, "measured": [pan, -20.0], "raw_cam": {"cup": {"pos": pos, "quat_wxyz": [1, 0, 0, 0]}}}  # noqa: E731
+    records = [rec(0, 0.1, [0.2, 0.0, 0.55]), rec(1, -15.0, [0.14, 0.0, 0.56]), rec(2, 30.0, [0.2, 0.0, 0.55])]
+    kept = survey.drop_stale(records)
+    assert [sorted(r["raw_cam"]) for r in kept] == [["cup"], ["cup"], []]

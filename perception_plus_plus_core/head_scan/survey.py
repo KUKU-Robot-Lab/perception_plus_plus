@@ -55,22 +55,21 @@ def accept(reading: HeadReading, max_err_deg: float = MAX_ERR_DEG, max_sigma_deg
 
 
 def drop_stale(records: list[dict], min_move_deg: float = 0.5) -> list[dict]:
-    """목이 움직였는데(min_move_deg 초과) 직전 기록과 위치가 완전히 같은 원시 포즈는 새로 찍히지 않은 낡은 값이라 버린다.
+    """목이 움직였는데(min_move_deg 초과) 이미 본 값과 위치가 완전히 같은 원시 포즈는 새로 찍히지 않은 낡은 값이라 버린다.
 
-    원본은 바꾸지 않는다. 비교 기준은 같은 물체의 가장 최근 기록이다.
+    원본은 바꾸지 않는다. 비교 기준은 같은 물체에서 지금까지 남긴 모든 기록이다(직전 것만이 아니다).
     """
     kept: list[dict] = []
-    last: dict[str, tuple[list[float], list[float]]] = {}  # 물체 → (그때의 원시 위치, 그때의 실측 각도)
+    seen: dict[str, list[tuple[list[float], list[float]]]] = {}  # 물체 → [(그때의 원시 위치, 그때의 실측 각도)]
     for rec in records:
         fresh = {}
         for name, raw in rec.get("raw_cam", {}).items():
-            if name in last:
-                pos, pose = last[name]
-                moved = max(abs(a - b) for a, b in zip(rec["measured"], pose)) > min_move_deg
-                if moved and pos == raw["pos"]:
-                    continue
+            stale = any(pos == raw["pos"] and max(abs(a - b) for a, b in zip(rec["measured"], pose)) > min_move_deg
+                        for pos, pose in seen.get(name, []))
+            if stale:
+                continue
             fresh[name] = raw
-            last[name] = (raw["pos"], rec["measured"])
+            seen.setdefault(name, []).append((raw["pos"], rec["measured"]))
         kept.append({**rec, "raw_cam": fresh})
     return kept
 
