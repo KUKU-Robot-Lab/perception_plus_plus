@@ -1,0 +1,10 @@
+# 목 FK 체인 사본 — base(body_link) ← head_camera(tilt 링크)
+#
+# 원본(진실원천): rl_ws/urdf/generated/rl/openarm_rh56f1_bi_rl.urdf (사용자 확정, 2026-10-13)
+# 인지 PC(vision-3090)에는 그 URDF 가 없어서 목 체인 관절 값만 옮겼다.
+# 어긋남은 tests/head_scan/test_head_fk.py 가 원본이 있는 PC 에서 잡는다.
+# 각도 규약은 head_fk.py 의 PAN_ENCODER_TO_URDF 주석을 본다.
+joints:
+  - {name: head_j_mount, type: fixed,    xyz: [0.0, 0.0, 0.750],             rpy: [0.0, 0.0, 0.0]}
+  - {name: head_j_pan,   type: revolute, xyz: [0.0225, 0.000034, 0.035603],  rpy: [0.0, 0.0, 0.0], axis: [0.0, 0.0, -1.0]}
+  - {name: head_j_tilt,  type: revolute, xyz: [0.0, -0.01158, 0.0304],       rpy: [0.0, 0.0, 0.0], axis: [0.0, 1.0, 0.0]}
