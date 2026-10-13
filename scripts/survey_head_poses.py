@@ -45,9 +45,15 @@ def head_home(sim2real: Path, pan: float | None, tilt: float | None) -> survey.H
     if pan is not None:
         cmd += ["--pan", str(pan), "--tilt", str(tilt)]
     res = run(cmd, cwd=sim2real, timeout=90)
+    try:
+        reading = survey.parse_head_home(res.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"head_home 출력을 못 읽음 rc={res.returncode}: {res.stdout[-300:]}{res.stderr[-300:]}") from exc
+    if res.returncode != 0 and not survey.accept(reading):
+        raise RuntimeError(f"head_home 정착 실패 rc={res.returncode}: 실측 {reading}")
     if res.returncode != 0:
-        raise RuntimeError(f"head_home 실패 rc={res.returncode}: {res.stderr[-300:]}")
-    return survey.parse_head_home(res.stdout)
+        print(f"  ⚠ head_home 검증 미달(rc {res.returncode}) — 정지·3° 이내라 실측 각도로 계속: {reading}")
+    return reading
 
 
 class RawPoseCollector:
@@ -141,8 +147,6 @@ def execute(args, poses) -> int:
             raise RuntimeError(f"perception_ctl start 실패: {ctl.stdout[-300:]}")
         for i, (pan, tilt) in enumerate(poses):
             reading = head_home(s2r, pan, tilt)
-            if not reading.ok:
-                raise RuntimeError(f"자세 {i} 검증 실패(오차 한계 초과): 실측 {reading}")
             time.sleep(args.settle_s)
             frame = args.out_dir / f"frame_{i}.npz"
             remote = f"/tmp/survey_frame_{i}.npz"
@@ -171,7 +175,9 @@ def execute(args, poses) -> int:
             status = 3
         for child in children:
             child.terminate()
-        (args.out_dir / "survey.json").write_text(json.dumps({"records": records, "status": status}, ensure_ascii=False, indent=1), encoding="utf-8")
+        (args.out_dir / "survey.json").write_text(
+            json.dumps({"records": records, "records_fresh": survey.drop_stale(records), "status": status},
+                       ensure_ascii=False, indent=1), encoding="utf-8")
     return status
 
 
