@@ -15,6 +15,7 @@ import argparse
 import json
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -49,32 +50,42 @@ def head_home(sim2real: Path, pan: float | None, tilt: float | None) -> survey.H
     return survey.parse_head_home(res.stdout)
 
 
-def collect_raw_poses(sim2real: Path, objects, since_s: float, window_s: float = 6.0) -> dict:
-    """fpp_pose_rx 가 내는 카메라 프레임 원시 포즈 중 since_s 이후 stamp 만 모은다(옛 값 배제)."""
-    sys.path.insert(0, str(sim2real / "scripts"))
-    import rclpy
-    from geometry_msgs.msg import PoseStamped
-    from object_registry import input_topic
-    from rclpy.node import Node
+class RawPoseCollector:
+    """fpp_pose_rx 가 내는 카메라 프레임 원시 포즈를 모은다. ★구독은 fpp_rescan **전에** 시작한다(발행이 일회성이라 뒤늦게 붙으면 놓친다)."""
 
-    if not rclpy.ok():
-        rclpy.init()
-    node = Node("survey_collect")
-    got: dict = {}
+    def __init__(self, sim2real: Path, objects):
+        sys.path.insert(0, str(sim2real / "scripts"))
+        import rclpy
+        from geometry_msgs.msg import PoseStamped
+        from object_registry import input_topic
+        from rclpy.executors import SingleThreadedExecutor
+        from rclpy.node import Node
 
-    def on(name, msg):
+        if not rclpy.ok():
+            rclpy.init()
+        self.got: dict = {}
+        self.since_s = 0.0
+        self.node = Node("survey_collect")
+        for n in objects:
+            self.node.create_subscription(PoseStamped, input_topic(n), lambda m, n=n: self._on(n, m), 10)
+        self.executor = SingleThreadedExecutor()
+        self.executor.add_node(self.node)
+        self.thread = threading.Thread(target=self.executor.spin, daemon=True)
+        self.thread.start()
+
+    def _on(self, name, msg):
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        if stamp >= since_s:
+        if stamp >= self.since_s:
             q, p = msg.pose.orientation, msg.pose.position
-            got[name] = {"pos": [p.x, p.y, p.z], "quat_wxyz": [q.w, q.x, q.y, q.z], "stamp_s": stamp}
+            self.got[name] = {"pos": [p.x, p.y, p.z], "quat_wxyz": [q.w, q.x, q.y, q.z], "stamp_s": stamp}
 
-    for n in objects:
-        node.create_subscription(PoseStamped, input_topic(n), lambda m, n=n: on(n, m), 10)
-    t0 = time.time()
-    while time.time() - t0 < window_s:
-        rclpy.spin_once(node, timeout_sec=0.2)
-    node.destroy_node()
-    return got
+    def begin(self, since_s: float) -> None:
+        """이 시각 이후 stamp 만 받는다(옛 값 배제)."""
+        self.got = {}
+        self.since_s = since_s
+
+    def result(self) -> dict:
+        return dict(self.got)
 
 
 def main() -> int:
@@ -123,6 +134,7 @@ def execute(args, poses) -> int:
                                                        "--objects", *args.objects])):
             children.append(subprocess.Popen(["python3", str(s2r / "scripts/nodes" / script), *extra], cwd=s2r,
                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        collector = RawPoseCollector(s2r, args.objects)
         time.sleep(4)
         ctl = run(["python3", str(s2r / "scripts/ops/perception_ctl.py"), "start", *args.objects, "--wait", "150"], cwd=s2r, timeout=220)
         if ctl.returncode != 0:
@@ -138,9 +150,11 @@ def execute(args, poses) -> int:
                        f"cd ~/rl_ws/sim2real && source scripts/vision/common.sh && cd ~/rl_ws/perception_plus_plus && python3 scripts/save_color_frame.py --out {remote}"], timeout=60)
             ok_frame = cap.returncode == 0 and run(["scp", "-q", f"{args.vision_host}:{remote}", str(frame)]).returncode == 0
             t_start = time.time()
+            collector.begin(t_start - 1.0)
             resc = run(["python3", str(s2r / "scripts/ops/fpp_rescan.py"), *args.objects, "--wait", "60",
                         "--status-host", args.vision_host], cwd=s2r, timeout=150)
-            raw = collect_raw_poses(s2r, args.objects, since_s=t_start - 1.0)
+            time.sleep(1.0)
+            raw = collector.result()
             records.append({"index": i, "commanded": [pan, tilt], "measured": [reading.pan_deg, reading.tilt_deg],
                             "frame": frame.name if ok_frame else None, "rescan_rc": resc.returncode, "raw_cam": raw})
             print(f"[{i}] 명령 {pan:+.1f}/{tilt:+.1f} 실측 {reading.pan_deg:+.3f}/{reading.tilt_deg:+.3f} · 영상 {'ok' if ok_frame else '없음'} · 찾은 물체 {sorted(raw)}")
