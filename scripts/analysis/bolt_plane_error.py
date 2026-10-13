@@ -18,7 +18,10 @@ rows = []
 for r in json.load(open(D/"survey.json"))["records"]:
     z = np.load(D/r["frame"]); gray = cv2.cvtColor(z["rgb"], cv2.COLOR_RGB2GRAY); K = z["K"]
     pan, tilt = r["measured"]; TB = head_fk.t_base_cam(pan, tilt)
-    Tc, used, img, res, shift = T.solve(holes, gray, K, TB)
+    try:
+        Tc, used, img, res, shift = T.solve(holes, gray, K, TB)
+    except RuntimeError as exc:
+        print(f"[{r['index']}] pan {pan:+7.3f} tilt {tilt:+7.3f} · 볼트 부족으로 건너뜀: {str(exc)[:30]}"); continue
     obj = np.array([holes[i].xyz for i in used])
     line = f"[{r['index']}] pan {pan:+7.3f} · 기준점 {len(used)}"
     for name, Tm in (("FK(B)", TB), ("정적(A)", TA), ("볼트PnP", Tc)):
