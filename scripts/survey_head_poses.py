@@ -49,7 +49,7 @@ def head_home(sim2real: Path, pan: float | None, tilt: float | None) -> survey.H
     return survey.parse_head_home(res.stdout)
 
 
-def collect_raw_poses(sim2real: Path, objects, since_s: float, window_s: float = 4.0) -> dict:
+def collect_raw_poses(sim2real: Path, objects, since_s: float, window_s: float = 6.0) -> dict:
     """fpp_pose_rx 가 내는 카메라 프레임 원시 포즈 중 since_s 이후 stamp 만 모은다(옛 값 배제)."""
     sys.path.insert(0, str(sim2real / "scripts"))
     import rclpy
@@ -117,7 +117,10 @@ def execute(args, poses) -> int:
     try:
         for script, extra in (("perception_launcher_node.py", ["--host", args.vision_host, "--pose-dest", "169.254.186.1",
                                                               "--camera-extrinsics", str(s2r / "config/global_camera_extrinsics.yaml")]),
-                              ("fpp_pose_rx.py", [])):
+                              ("fpp_pose_rx.py", []),
+                              # fpp_rescan 은 /objects/*/pose(base 좌표)를 읽어야 끝난다 — 변환 노드를 같이 띄운다.
+                              ("object_pose_node.py", ["--camera-extrinsics", str(s2r / "config/global_camera_extrinsics.yaml"),
+                                                       "--objects", *args.objects])):
             children.append(subprocess.Popen(["python3", str(s2r / "scripts/nodes" / script), *extra], cwd=s2r,
                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
         time.sleep(4)
@@ -132,7 +135,7 @@ def execute(args, poses) -> int:
             frame = args.out_dir / f"frame_{i}.npz"
             remote = f"/tmp/survey_frame_{i}.npz"
             cap = run(["ssh", "-o", "BatchMode=yes", args.vision_host,
-                       f"cd ~/rl_ws/perception_plus_plus && ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=126 python3 scripts/save_color_frame.py --out {remote}"], timeout=60)
+                       f"cd ~/rl_ws/sim2real && source scripts/vision/common.sh && cd ~/rl_ws/perception_plus_plus && python3 scripts/save_color_frame.py --out {remote}"], timeout=60)
             ok_frame = cap.returncode == 0 and run(["scp", "-q", f"{args.vision_host}:{remote}", str(frame)]).returncode == 0
             t_start = time.time()
             resc = run(["python3", str(s2r / "scripts/ops/fpp_rescan.py"), *args.objects, "--wait", "60",
