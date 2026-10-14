@@ -29,6 +29,7 @@ class StandingObs:
     pan_deg: float
     tilt_deg: float
     xy_init: tuple[float, float]
+    bias_xy: tuple[float, float] = (0.0, 0.0)  # 이 목 각도의 보정 프로필 값(base xy 에 더한다)
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ def estimate_standing(observations: list[StandingObs], vertices_body: np.ndarray
             continue
         fit = silhouette_fit.fit_xy(vertices_body, faces, z_origin, t_bc, obs.k, mask, obs.xy_init, occluder=occluder)
         if fit.iou >= min_iou:
-            fits.append(fit)
+            fits.append(silhouette_fit.FitResult(x=fit.x + obs.bias_xy[0], y=fit.y + obs.bias_xy[1], iou=fit.iou, init_iou=fit.init_iou))
     if not fits:
         return None
     xy = np.array([[f.x, f.y] for f in fits])

@@ -18,7 +18,7 @@ from typing import Protocol
 import cv2
 import numpy as np
 
-from . import head_fk, scan_poses, silhouette_fit, standing_pose, survey
+from . import calib_profile as cpm, head_fk, scan_poses, silhouette_fit, standing_pose, survey
 
 HOME_POSE = (0.0, -20.0)
 StageCallback = Callable[[str, float, float], None]
@@ -176,11 +176,27 @@ def plan_poses(side: str | None, tilt_deg: float = DEFAULT_TILT_DEG, pan_range: 
     return chosen + rest
 
 
+def plan_poses_from_profile(profile, side: str | None) -> list[tuple[float, float]]:
+    """보정 프로필의 각도(정수 deg 로 반올림한 명령값)만으로 계획한다: 찾을 쪽 테이블이 많이 보이는 순서."""
+    if side not in (None, "right", "left"):
+        raise ValueError(f"side 는 right/left/None: {side!r}")
+    points = scan_poses.table_points()
+    if side == "right":
+        points = points[points[:, 1] < 0]
+    elif side == "left":
+        points = points[points[:, 1] > 0]
+    cam = scan_poses.default_camera()
+    candidates = sorted({(float(round(e.pan_deg)), float(round(e.tilt_deg))) for e in profile.entries})
+    seen = {c: int(scan_poses.visible_mask(points, head_fk.t_base_cam(*c), cam).sum()) for c in candidates}
+    return sorted((c for c in candidates if seen[c]), key=lambda c: (-seen[c], abs(c[0])))
+
+
 def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, camera: CameraPort, table_z: float = standing_pose.TABLE_TOP_Z,
                   extrinsics_yaml: Path | str = head_fk.EXTRINSICS_YAML, on_stage: StageCallback | None = None,
-                  should_stop: Callable[[], bool] | None = None) -> LocateResult:
+                  should_stop: Callable[[], bool] | None = None, profile=None) -> LocateResult:
     """요청을 처리한다. 자세가 한계를 넘으면 움직이기 전에 ValueError. 그 밖의 실패는 결과의 reason 에 담는다.
 
+    profile(보정 프로필)을 주면 그 hand-eye 로 카메라 자세를 만들고 목 각도별 보정을 더한다. strict 인데 표에 없는 각도에서 찍은 영상은 쓰지 않는다.
     on_stage(단계, pan, tilt) 는 planning·moving·shooting·fitting·returning 순으로 불린다. should_stop() 이 참이면 다음 자세로
     가지 않고 복귀한다(취소). 둘 다 없어도 된다.
     """
@@ -189,7 +205,18 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
             on_stage(name, pan, tilt)
 
     stage("planning")
-    poses = list(request.poses) if request.poses else plan_poses(request.side, request.tilt_deg)[:request.max_poses]
+    profile_dir = None
+    if profile is not None:
+        import tempfile
+
+        profile_dir = tempfile.TemporaryDirectory()
+        extrinsics_yaml = cpm.write_extrinsics_yaml(profile, Path(profile_dir.name) / "hand_eye.yaml")
+    if request.poses:
+        poses = list(request.poses)
+    elif profile is not None:
+        poses = plan_poses_from_profile(profile, request.side)[:request.max_poses]
+    else:
+        poses = plan_poses(request.side, request.tilt_deg)[:request.max_poses]
     survey.validate_poses(poses + [HOME_POSE])
     z_origin = table_z + spec.origin_above_bottom
     observations: list[standing_pose.StandingObs] = []
@@ -206,14 +233,22 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
             t_bc = head_fk.t_base_cam(reading.pan_deg, reading.tilt_deg, extrinsics_yaml)
             blobs, stamp, first_init = 0, 0.0, None
             stage("shooting", reading.pan_deg, reading.tilt_deg)
+            bias = (0.0, 0.0)
+            usable = True
+            if profile is not None:
+                entry = cpm.lookup(profile, reading.pan_deg, reading.tilt_deg)
+                usable = entry is not None or not profile.strict
+                bias = entry.bias_xy_m if entry is not None else (0.0, 0.0)
             for frame in camera.capture(request.n_frames):
                 stamp = frame.stamp_s
+                if not usable:  # 보정하지 않은 각도 — 찍되 쓰지 않는다
+                    continue
                 init = request.prior_xy or best_blob_init(spec, frame.rgb, frame.k, t_bc, z_origin)
                 if init is None:
                     continue
                 blobs += 1
                 first_init = first_init or init
-                observations.append(standing_pose.StandingObs(frame.rgb, frame.k, reading.pan_deg, reading.tilt_deg, init))
+                observations.append(standing_pose.StandingObs(frame.rgb, frame.k, reading.pan_deg, reading.tilt_deg, init, bias))
             shots.append(Shot(reading.pan_deg, reading.tilt_deg, stamp, blobs, first_init))
             if not blobs:
                 continue
@@ -225,6 +260,8 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
     except Exception as exc:  # noqa: BLE001 - 어떤 실패든 복귀를 막지 않고 이유를 결과에 남긴다
         reason = str(exc)
         estimate = None
+    if profile_dir is not None:
+        profile_dir.cleanup()
     home_ok = True
     stage("returning", *HOME_POSE)
     try:

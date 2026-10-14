@@ -195,3 +195,48 @@ def test_best_blob_returns_none_when_no_blob_matches_the_shape():
     head.move(0.0, -20.0)
     rgb = _two_blob_frame(head, spec, (5.0, 5.0), (0.22, 0.10), distractor_radius=0.09)
     assert locate.best_blob_init(spec, rgb, fakes.DEFAULT_K, head_fk.t_base_cam(0.0, -20.0), TABLE_Z + ORIGIN_ABOVE_BOTTOM) is None
+
+
+def _profile(tmp_path, entries, strict=True):
+    import yaml
+
+    path = tmp_path / "prof.yaml"
+    path.write_text(yaml.safe_dump({
+        "profile": {"name": "t"}, "hand_eye": {"neck_to_camera": {"matrix": head_fk.load_neck_to_camera().tolist()}},
+        "angle_tolerance_deg": 1.0, "strict": strict,
+        "angles": [{"pan_deg": p, "tilt_deg": t, "bias_xy_m": list(b)} for p, t, b in entries]}), encoding="utf-8")
+    from perception_plus_plus_core.head_scan import calib_profile as cpm
+    return cpm.load_profile(path)
+
+
+def test_estimate_adds_the_per_observation_bias_to_the_result():
+    from perception_plus_plus_core.head_scan import standing_pose as sp
+
+    spec = _spec()
+    head = FakeHead()
+    head.move(0.0, -20.0)
+    frame = FakeCamera(head, (0.22, 0.05), spec).capture()[0]
+    base = sp.StandingObs(frame.rgb, frame.k, 0.0, -20.0, (0.23, 0.04))
+    shifted = sp.StandingObs(frame.rgb, frame.k, 0.0, -20.0, (0.23, 0.04), bias_xy=(0.002, -0.001))
+    a = sp.estimate_standing([base], spec.vertices, spec.faces, spec.origin_above_bottom, spec.hue)
+    b = sp.estimate_standing([shifted], spec.vertices, spec.faces, spec.origin_above_bottom, spec.hue)
+    assert (b.x - a.x, b.y - a.y) == pytest.approx((0.002, -0.001), abs=1e-9)
+
+
+def test_locate_with_profile_applies_bias_and_skips_uncalibrated_angles(tmp_path):
+    spec, truth = _spec(), (0.22, -0.12)
+    profile = _profile(tmp_path, [(-40.0, -20.0, (0.0, 0.0)), (-30.0, -20.0, (0.002, 0.0))])
+    head = FakeHead()
+    request = locate.LocateRequest(object_name="blue_cup", poses=[(-50.0, -20.0), (-40.0, -20.0), (-30.0, -20.0)], min_used=2)
+    result = locate.locate_object(request, spec, head, FakeCamera(head, truth, spec), table_z=TABLE_Z, profile=profile)
+    assert head.moves == [(-50.0, -20.0), (-40.0, -20.0), (-30.0, -20.0)]   # 이동은 하되
+    assert [s.n_blobs for s in result.shots][0] == 0                       # 표에 없는 각도의 영상은 쓰지 않는다
+    assert result.found and result.n_used == 2
+    assert result.x == pytest.approx(truth[0] + 0.001, abs=2e-3)           # 두 각도 보정(0, +2 mm)의 가중 평균 근처
+
+
+def test_plan_from_profile_only_returns_profile_angles(tmp_path):
+    profile = _profile(tmp_path, [(-50.0, -30.0, (0.0, 0.0)), (-40.0, -20.0, (0.0, 0.0)), (45.0, -20.0, (0.0, 0.0))])
+    poses = locate.plan_poses_from_profile(profile, side="right")
+    assert set(poses) <= {(-50.0, -30.0), (-40.0, -20.0), (45.0, -20.0)}
+    assert poses and poses[0] != (45.0, -20.0)

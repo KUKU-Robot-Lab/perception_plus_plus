@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from perception_plus_plus_core.head_scan import adapters, locate, objects, survey  # noqa: E402
+from perception_plus_plus_core.head_scan import adapters, calib_profile, locate, objects, survey  # noqa: E402
 
 
 def start_perception(sim2real: Path, vision_host: str, names: list[str]) -> subprocess.Popen:
@@ -60,6 +60,7 @@ def main() -> int:
     ap.add_argument("--sim2real", type=Path, default=adapters.SIM2REAL)
     ap.add_argument("--vision-host", default="vision-3090")
     ap.add_argument("--extrinsics", type=Path, default=None, help="hand-eye yaml(기본: 저장소 head_extrinsics.yaml). 후보 비교용")
+    ap.add_argument("--calib-profile", default=None, help="보정 프로필(이름 또는 경로, sim2real config/calib_profiles). hand-eye 와 목 각도별 보정을 쓰고, 계획도 프로필 각도로만 한다")
     ap.add_argument("--save-dir", type=Path, default=None, help="찍은 영상을 이 폴더에 frame_NN.npz 로 남긴다(진단용)")
     ap.add_argument("--start-perception", action="store_true")
     ap.add_argument("--fake", metavar="X,Y", help="로봇 없이 가짜 목·카메라로 돌린다(물체가 (X,Y) 에 있다고 치고 렌더). 목은 안 움직인다")
@@ -68,10 +69,11 @@ def main() -> int:
     args = ap.parse_args()
 
     spec = objects.load_spec(args.object)
+    profile = calib_profile.load_profile(args.calib_profile) if args.calib_profile else None
     poses = survey.parse_pose_list(args.poses) if args.poses else None
     request = locate.LocateRequest(object_name=spec.name, side=args.side, poses=poses, max_poses=args.max_poses,
                                    min_used=args.min_used, n_frames=args.frames)
-    plan = poses or locate.plan_poses(args.side, request.tilt_deg)[:args.max_poses]
+    plan = poses or (locate.plan_poses_from_profile(profile, args.side) if profile else locate.plan_poses(args.side, request.tilt_deg))[:args.max_poses]
     survey.validate_poses(plan + [locate.HOME_POSE])
     print(f"물체 {spec.name} · 쪽 {args.side} · 후보 자세 {plan} · 자세당 {args.frames}장 · 끝나면 {locate.HOME_POSE} 로 복귀")
     if args.fake:
@@ -88,7 +90,7 @@ def main() -> int:
     launcher = start_perception(args.sim2real, args.vision_host, [spec.name]) if args.start_perception else None
     try:
         result = locate.locate_object(request, spec, adapters.Sim2RealHead(args.sim2real), adapters.SshCamera(args.vision_host, save_dir=args.save_dir),
-                                      **({"extrinsics_yaml": args.extrinsics} if args.extrinsics else {}))
+                                      **({"extrinsics_yaml": args.extrinsics} if args.extrinsics else {}), profile=profile)
     finally:
         if launcher:
             launcher.terminate()
