@@ -104,6 +104,7 @@ def main() -> int:
     ap.add_argument("--sim2real", type=Path, default=Path.home() / "rl_ws/sim2real")
     ap.add_argument("--vision-host", default="vision-3090")
     ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--camera-extrinsics", type=Path, default=None, help="FP++ 스냅샷·변환 노드에 줄 camera extrinsics yaml(기본: sim2real 기준 자세 파일)")
     ap.add_argument("--settle-s", type=float, default=1.0)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--execute", action="store_true")
@@ -130,15 +131,17 @@ def main() -> int:
 
 def execute(args, poses) -> int:
     s2r = args.sim2real
+    # 스냅샷 노드가 후보를 거를 때 쓰는 정적 camera 블록. tilt 를 고정해 찍을 때는 그 tilt 의 파일을 준다(--camera-extrinsics).
+    camera_yaml = args.camera_extrinsics or s2r / "config/global_camera_extrinsics.yaml"
     children: list[subprocess.Popen] = []
     records: list[dict] = []
     status = 0
     try:
         for script, extra in (("perception_launcher_node.py", ["--host", args.vision_host, "--pose-dest", "169.254.186.1",
-                                                              "--camera-extrinsics", str(s2r / "config/global_camera_extrinsics.yaml")]),
+                                                              "--camera-extrinsics", str(camera_yaml)]),
                               ("fpp_pose_rx.py", []),
                               # fpp_rescan 은 /objects/*/pose(base 좌표)를 읽어야 끝난다 — 변환 노드를 같이 띄운다.
-                              ("object_pose_node.py", ["--camera-extrinsics", str(s2r / "config/global_camera_extrinsics.yaml"),
+                              ("object_pose_node.py", ["--camera-extrinsics", str(camera_yaml),
                                                        "--objects", *args.objects])):
             children.append(subprocess.Popen(["python3", str(s2r / "scripts/nodes" / script), *extra], cwd=s2r,
                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))

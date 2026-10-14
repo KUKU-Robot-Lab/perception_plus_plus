@@ -240,3 +240,21 @@ def test_plan_from_profile_only_returns_profile_angles(tmp_path):
     poses = locate.plan_poses_from_profile(profile, side="right")
     assert set(poses) <= {(-50.0, -30.0), (-40.0, -20.0), (45.0, -20.0)}
     assert poses and poses[0] != (45.0, -20.0)
+
+
+def test_camera_extrinsics_at_replaces_only_the_camera_block(tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    import yaml
+
+    spec = importlib.util.spec_from_file_location("mk", Path(__file__).resolve().parents[2] / "scripts/make_camera_extrinsics_at.py")
+    mk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mk)
+    base = ("# c\ncamera:\n  frame: camera_color_optical_frame\n  position: [0.1, 0.2, 0.3]\n  orientation_wxyz: [1.0, 0.0, 0.0, 0.0]\n"
+            "cad_to_body:\n  position: [0.0, 0.0, 0.046]\n")
+    out = yaml.safe_load(mk.render(base, 0.0, -30.0, head_fk.EXTRINSICS_YAML))
+    assert out["cad_to_body"]["position"] == [0.0, 0.0, 0.046]
+    pos = np.array(out["camera"]["position"])
+    assert pos == pytest.approx(head_fk.t_base_cam(0.0, -30.0)[:3, 3], abs=1e-8)
+    assert np.linalg.norm(out["camera"]["orientation_wxyz"]) == pytest.approx(1.0, abs=1e-8)
