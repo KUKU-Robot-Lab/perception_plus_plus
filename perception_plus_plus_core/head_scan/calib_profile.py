@@ -26,8 +26,9 @@ def _load():
 
 
 _m = _load()
-AngleEntry, CalibProfile, UncalibratedAngle = _m.AngleEntry, _m.CalibProfile, _m.UncalibratedAngle
-PROFILE_DIR, load_profile, save_profile, bias_for, lookup = _m.PROFILE_DIR, _m.load_profile, _m.save_profile, _m.bias_for, _m.lookup
+AngleEntry, CalibProfile, UncalibratedAngle, FrameAnchor = _m.AngleEntry, _m.CalibProfile, _m.UncalibratedAngle, _m.FrameAnchor
+PROFILE_DIR, load_profile, save_profile, bias_for, lookup, anchor_position = (_m.PROFILE_DIR, _m.load_profile, _m.save_profile, _m.bias_for,
+                                                                              _m.lookup, _m.anchor_position)
 
 
 def write_extrinsics_yaml(profile, path) -> Path:
