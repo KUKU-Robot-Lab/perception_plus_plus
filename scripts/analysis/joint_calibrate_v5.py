@@ -128,12 +128,14 @@ def main():
         x = fit(rest, dets, free, names, mirror, boards, x_full[:6], w)
         r = residuals(x, [f], [], free, names, mirror)
         held_bolt.append(np.linalg.norm(r.reshape(-1, 2), axis=1).mean())
+        print(f"  볼트 {f['tag']:>22} pan {f['pan']:+7.2f} tilt {f['tilt']:+6.2f}: 빼고 맞춘 뒤 오차 {held_bolt[-1]:.2f} mm")
     for pose in poses:  # 보드 자세 하나 빼기(그 자세의 볼트 프레임도 같이 뺀다)
         rest_dets = [d for d in dets if (d.pan, d.tilt) != pose]
         rest_bolts = [f for f in bolts if (round(f["pan"], 3), round(f["tilt"], 3)) != (round(pose[0], 3), round(pose[1], 3))]
         x = fit(rest_bolts, rest_dets, free, names, mirror, boards, x_full[:6], w)
         r = residuals(x, [], [d for d in dets if (d.pan, d.tilt) == pose], free, names, mirror, 1.0)
         held_board.append(rms(r) * np.sqrt(2))
+        print(f"  보드 pan {pose[0]:+7.2f} tilt {pose[1]:+6.2f}: 빼고 맞춘 뒤 코너 오차 {held_board[-1]:.2f} mm ({sum(1 for d in dets if (d.pan, d.tilt) == pose)}장)")
     print(f"교차검증(하나 빼고): 볼트 평균 {np.mean(held_bolt):.2f} mm (최대 {max(held_bolt):.2f}, {len(tags)}프레임) · "
           f"보드 코너 RMS {np.sqrt(np.mean(np.square(held_board))):.2f} mm (최대 {max(held_board):.2f}, {len(poses)}자세)")
     if args.write:
