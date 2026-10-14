@@ -54,10 +54,11 @@ def run(head: locate.HeadPort, camera: locate.CameraPort, spec: locate.ObjectSpe
             t_bc = head_fk.t_base_cam(reading.pan_deg, reading.tilt_deg, extrinsics_yaml)
             fits = []
             for frame in camera.capture(n_frames):
-                init = locate.blob_init_xy(frame.rgb, frame.k, spec.hue, t_bc, z_origin)
+                init = locate.best_blob_init(spec, frame.rgb, frame.k, t_bc, z_origin)
                 if init is None:
                     continue
-                mask = silhouette_fit.largest_blob_near(silhouette_fit.hue_mask(frame.rgb, spec.hue), (frame.k[0, 2], frame.k[1, 2]))
+                uv, _ = silhouette_fit.project_points(np.array([[init[0], init[1], z_origin]]), t_bc, frame.k)
+                mask = silhouette_fit.largest_blob_near(silhouette_fit.hue_mask(frame.rgb, spec.hue), tuple(uv[0]))
                 if mask.sum() < standing_pose.MIN_MASK_PX:
                     continue
                 fit = silhouette_fit.fit_xy(spec.vertices, spec.faces, z_origin, t_bc, frame.k, mask, init)

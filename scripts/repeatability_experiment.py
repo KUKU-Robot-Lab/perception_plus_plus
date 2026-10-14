@@ -25,6 +25,7 @@ def main() -> int:
     ap.add_argument("--frames", type=int, default=5)
     ap.add_argument("--sim2real", type=Path, default=adapters.SIM2REAL)
     ap.add_argument("--vision-host", default="vision-3090")
+    ap.add_argument("--save-dir", type=Path, default=None, help="찍은 영상을 frame_NN.npz 로 남긴다")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--execute", action="store_true")
     args = ap.parse_args()
@@ -41,7 +42,7 @@ def main() -> int:
     if busy:
         print("❌ 목을 명령하는 다른 프로세스가 있다 — 중단:\n  " + "\n  ".join(busy), file=sys.stderr)
         return 2
-    report = repeatability.run(adapters.Sim2RealHead(args.sim2real), adapters.SshCamera(args.vision_host), spec, pose, detour,
+    report = repeatability.run(adapters.Sim2RealHead(args.sim2real), adapters.SshCamera(args.vision_host, save_dir=args.save_dir), spec, pose, detour,
                                n_visits=args.visits, n_frames=args.frames)
     for i, v in enumerate(report.visits):
         print(f"  방문 {i}: 실측 pan {v.pan_deg:+.3f} tilt {v.tilt_deg:+.3f} · 맞춘 프레임 {len(v.fits)}/{args.frames}")
