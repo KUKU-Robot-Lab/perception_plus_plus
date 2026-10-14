@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -31,6 +32,16 @@ def start_perception(sim2real: Path, vision_host: str, names: list[str]) -> subp
         launcher.terminate()
         raise RuntimeError(f"perception_ctl start 실패: {ctl.stdout[-300:]}")
     return launcher
+
+
+def print_timeline(events: list[tuple[float, str, float, float]]) -> None:
+    """단계 사이 경과 시간(s). 이동(moving→shooting)은 목 이동·정착, 촬영(shooting→fitting)은 영상 수신, 맞춤(fitting→다음)은 계산."""
+    if not events:
+        return
+    t0 = events[0][0]
+    print(f"시간표(총 {events[-1][0] - t0:.1f} s 까지, 마지막 단계 시작 시각 기준):")
+    for (t, stage, pan, tilt), nxt in zip(events, events[1:] + [(events[-1][0], "", 0.0, 0.0)]):
+        print(f"  +{t - t0:6.1f}s {stage:9s} pan {pan:+6.1f} tilt {tilt:+6.1f} · 이 단계 {nxt[0] - t:5.1f} s")
 
 
 def run_fake(args, spec, request) -> int:
@@ -88,15 +99,18 @@ def main() -> int:
     if busy:
         print("❌ 목을 명령하는 다른 프로세스가 있다 — 중단:\n  " + "\n  ".join(busy), file=sys.stderr)
         return 2
+    events: list[tuple[float, str, float, float]] = []
     launcher = start_perception(args.sim2real, args.vision_host, [spec.name]) if args.start_perception else None
     try:
         result = locate.locate_object(request, spec, adapters.Sim2RealHead(args.sim2real), adapters.SshCamera(args.vision_host, save_dir=args.save_dir),
-                                      **({"extrinsics_yaml": args.extrinsics} if args.extrinsics else {}), profile=profile)
+                                      **({"extrinsics_yaml": args.extrinsics} if args.extrinsics else {}), profile=profile,
+                                      on_stage=lambda stage, pan, tilt: events.append((time.time(), stage, pan, tilt)))
     finally:
         if launcher:
             launcher.terminate()
     for shot in result.shots:
         print(f"  촬영 pan {shot.pan_deg:+.3f} tilt {shot.tilt_deg:+.3f} 영상 {shot.stamp_s:.3f} 색 덩어리 {shot.n_blobs}" + (f" · 시작점 ({shot.init_xy[0]:.3f}, {shot.init_xy[1]:.3f})" if shot.init_xy else ""))
+    print_timeline(events)
     print(f"기준 자세 복귀: {'✓' if result.home_ok else '❌ 확인 필요'}")
     if not result.found:
         print(f"못 찾음: {result.reason}")

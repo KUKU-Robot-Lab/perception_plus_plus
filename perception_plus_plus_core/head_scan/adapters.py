@@ -19,7 +19,8 @@ from . import locate, survey
 
 SIM2REAL = Path.home() / "rl_ws/sim2real"
 #: 목을 직접 명령하는 스크립트 파일명 — 같은 시리얼 포트를 쓰므로 동시에 돌면 안 된다. 팔 pd·손 노드는 목을 건드리지 않아 해당 없음.
-HEAD_COMMANDER_SCRIPTS = frozenset({"head_home.py", "head_compliant_hold.py", "head_position_hold_node.py", "head_joint_publisher.py",
+# head_joint_publisher.py 는 목 각도를 읽어 발행만 한다(토크·게인·목표를 안 쓴다, 사용자 승인 2026-10-14) — 목록에서 제외.
+HEAD_COMMANDER_SCRIPTS = frozenset({"head_home.py", "head_compliant_hold.py", "head_position_hold_node.py",
                                     "survey_head_poses.py", "locate_object.py"})
 
 

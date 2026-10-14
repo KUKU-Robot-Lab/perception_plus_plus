@@ -265,3 +265,26 @@ def test_profile_plan_can_be_fixed_to_one_tilt(tmp_path):
     poses = locate.plan_poses_from_profile(profile, side="right", tilt_deg=-30.0)
     assert poses and all(t == -30.0 for _, t in poses)
     assert set(locate.plan_poses_from_profile(profile, side="right")) > set(poses)
+
+
+def test_locate_with_a_frame_anchor_reports_in_the_anchored_frame(tmp_path):
+    import yaml
+
+    from perception_plus_plus_core.head_scan import calib_profile as cpm
+
+    spec, truth = _spec(), (0.22, -0.12)
+    path = tmp_path / "anch.yaml"
+    path.write_text(yaml.safe_dump({
+        "profile": {"name": "a"}, "hand_eye": {"neck_to_camera": {"matrix": head_fk.load_neck_to_camera().tolist()}},
+        "angle_tolerance_deg": 1.0, "strict": True,
+        "frame_anchor": {"rot_deg": 1.0, "trans_xy_m": [0.007, -0.014], "dz_m": -0.003, "source": "t"},
+        "known_z": {"table_top_m": 0.205, "tolerance_m": 0.015},
+        "angles": [{"pan_deg": -40.0, "tilt_deg": -20.0, "bias_xy_m": [0.0, 0.0]}]}), encoding="utf-8")
+    profile = cpm.load_profile(path)
+    head = FakeHead()
+    request = locate.LocateRequest(object_name="blue_cup", poses=[(-40.0, -20.0)], min_used=1)
+    result = locate.locate_object(request, spec, head, FakeCamera(head, truth, spec), table_z=TABLE_Z, profile=profile)
+    c, s_ = np.cos(np.radians(1.0)), np.sin(np.radians(1.0))
+    expected = (c * truth[0] - s_ * truth[1] + 0.007, s_ * truth[0] + c * truth[1] - 0.014)
+    assert (result.x, result.y) == pytest.approx(expected, abs=3e-3)
+    assert result.z == pytest.approx(TABLE_Z + ORIGIN_ABOVE_BOTTOM)   # known z 가 있으면 앵커 dz 가 아니라 아는 값

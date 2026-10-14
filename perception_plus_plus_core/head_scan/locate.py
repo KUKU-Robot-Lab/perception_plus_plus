@@ -272,6 +272,11 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
         home_ok, reason = False, f"{reason}; 복귀 실패: {exc}".lstrip("; ")
     if estimate is None:
         return LocateResult(found=False, shots=tuple(shots), reason=reason or "어느 자세에서도 물체를 못 찾았다", home_ok=home_ok)
-    return LocateResult(found=True, x=estimate.x, y=estimate.y, z=estimate.z, n_used=estimate.n_used, n_rejected=estimate.n_rejected,
+    x, y, z = estimate.x, estimate.y, estimate.z
+    if profile is not None and profile.anchor is not None:
+        # FP++ 노드와 같은 좌표계(기존 검증된 FP++ 좌표계)로 내보낸다. z 는 known z 가 있으면 아는 값 그대로.
+        x, y, z_anchored = (float(v) for v in cpm.anchor_position(profile, np.array([x, y, z])))
+        z = z if profile.known_z is not None else z_anchored
+    return LocateResult(found=True, x=x, y=y, z=z, n_used=estimate.n_used, n_rejected=estimate.n_rejected,
                         spread_m=estimate.spread_m, mean_iou=estimate.mean_iou, shots=tuple(shots), reason=reason, home_ok=home_ok,
                         consistent=estimate.n_used >= request.min_used and estimate.spread_m <= request.spread_tol_m)
