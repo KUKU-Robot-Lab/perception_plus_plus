@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 import trimesh
 
-from perception_plus_plus_core.head_scan import fakes, head_fk, locate
+from perception_plus_plus_core.head_scan import fakes, head_fk, locate, silhouette_fit as sf
 
 K = np.array([[606.6, 0, 320.0], [0, 605.7, 240.6], [0, 0, 1.0]])
 HEIGHT = 0.13
@@ -76,6 +76,7 @@ def test_locate_finds_object_and_returns_home():
     assert (result.x, result.y) == pytest.approx(truth, abs=3e-3)
     assert result.z == pytest.approx(TABLE_Z + ORIGIN_ABOVE_BOTTOM)
     assert result.n_used >= 1 and result.shots
+    assert result.consistent == (result.n_used >= 2)
     assert head.homed == 1
 
 
@@ -162,3 +163,35 @@ def test_repeatability_separates_frame_noise_from_return_to_pose_scatter():
     assert report.frame_noise_m < 1e-3 and report.visit_scatter_m < 1e-3
     assert report.angle_scatter_deg == pytest.approx(0.0, abs=1e-9)
     assert head.homed == 1
+
+
+def _two_blob_frame(head, spec, target_xy, distractor_xy, distractor_radius):
+    """같은 hue 의 컵(목표)과 더 굵은 원통(방해물)이 같이 서 있는 영상."""
+    t_bc = head_fk.t_base_cam(*head.moves[-1])
+    cup = sf.render_silhouette(spec.vertices + np.r_[target_xy, TABLE_Z + ORIGIN_ABOVE_BOTTOM], spec.faces, t_bc, fakes.DEFAULT_K, (480, 640))
+    big = trimesh.creation.cylinder(radius=distractor_radius, height=HEIGHT, sections=48)
+    other = sf.render_silhouette(big.vertices + np.r_[distractor_xy, TABLE_Z + ORIGIN_ABOVE_BOTTOM], big.faces, t_bc, fakes.DEFAULT_K, (480, 640))
+    rgb = np.full((480, 640, 3), 20, np.uint8)
+    rgb[cup | other] = BLUE_RGB
+    return rgb
+
+
+def test_best_blob_picks_the_blob_whose_shape_matches_not_the_largest():
+    spec, target, distractor = _spec(), (0.22, -0.05), (0.22, 0.10)
+    head = FakeHead()
+    head.move(0.0, -20.0)
+    rgb = _two_blob_frame(head, spec, target, distractor, distractor_radius=0.055)
+    t_bc = head_fk.t_base_cam(0.0, -20.0)
+    z = TABLE_Z + ORIGIN_ABOVE_BOTTOM
+    largest = locate.blob_init_xy(rgb, fakes.DEFAULT_K, spec.hue, t_bc, z)
+    assert largest == pytest.approx(distractor, abs=0.03), "전제: 가장 큰 덩어리는 방해물이다"
+    found = locate.best_blob_init(spec, rgb, fakes.DEFAULT_K, t_bc, z)
+    assert found is not None and found == pytest.approx(target, abs=0.01)
+
+
+def test_best_blob_returns_none_when_no_blob_matches_the_shape():
+    spec = _spec()
+    head = FakeHead()
+    head.move(0.0, -20.0)
+    rgb = _two_blob_frame(head, spec, (5.0, 5.0), (0.22, 0.10), distractor_radius=0.09)
+    assert locate.best_blob_init(spec, rgb, fakes.DEFAULT_K, head_fk.t_base_cam(0.0, -20.0), TABLE_Z + ORIGIN_ABOVE_BOTTOM) is None

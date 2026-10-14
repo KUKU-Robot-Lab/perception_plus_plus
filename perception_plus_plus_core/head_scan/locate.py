@@ -29,6 +29,8 @@ DEFAULT_PAN_STEP = 10.0
 EXTRA_TILTS_DEG = (-30.0,)
 #: 이 화소 수 미만의 색 덩어리는 물체로 보지 않는다.
 MIN_BLOB_PX = 200
+#: 모양 대조에 쓰는 색 덩어리 최대 개수(큰 순).
+MAX_BLOBS = 4
 #: 서로 일관된 관측이 이만큼 모이고 흩어짐이 허용 이하면 더 찍지 않는다.
 DEFAULT_MIN_USED = 2
 DEFAULT_SPREAD_TOL_M = 0.003
@@ -108,6 +110,7 @@ class LocateResult:
     shots: tuple[Shot, ...] = field(default_factory=tuple)
     reason: str = ""
     home_ok: bool = True
+    consistent: bool = False  # 일관된 관측이 min_used 이상이고 흩어짐이 허용 이하일 때만 참(관측 1개짜리 값은 거짓)
 
 
 def blob_init_xy(rgb: np.ndarray, k: np.ndarray, hue: float, t_base_cam: np.ndarray, z_origin: float) -> tuple[float, float] | None:
@@ -125,6 +128,28 @@ def blob_init_xy(rgb: np.ndarray, k: np.ndarray, hue: float, t_base_cam: np.ndar
     s = (z_origin - t_base_cam[2, 3]) / ray[2]
     hit = t_base_cam[:3, 3] + s * ray
     return float(hit[0]), float(hit[1])
+
+
+def best_blob_init(spec: ObjectSpec, rgb: np.ndarray, k: np.ndarray, t_base_cam: np.ndarray, z_origin: float,
+                   min_iou: float = standing_pose.DEFAULT_MIN_IOU, max_blobs: int = MAX_BLOBS) -> tuple[float, float] | None:
+    """같은 색 덩어리가 여럿(다른 병·컵)일 때 CAD 실루엣과 가장 잘 맞는 덩어리의 (x, y). min_iou 를 넘는 덩어리가 없으면 None.
+
+    덩어리 크기로 고르면 비슷한 크기의 다른 물체를 잡는다(2026-10-14 실기: 240 mm·200 mm 병이 면적 0.4 % 차이).
+    """
+    mask_all = silhouette_fit.hue_mask(rgb, spec.hue).astype(np.uint8)
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_all, connectivity=8)
+    order = sorted((i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= MIN_BLOB_PX), key=lambda i: -stats[i, cv2.CC_STAT_AREA])[:max_blobs]
+    best: tuple[float, tuple[float, float]] | None = None
+    for i in order:
+        ray = t_base_cam[:3, :3] @ np.array([(centroids[i][0] - k[0, 2]) / k[0, 0], (centroids[i][1] - k[1, 2]) / k[1, 1], 1.0])
+        if ray[2] >= -1e-6:
+            continue
+        init = (t_base_cam[:3, 3] + (z_origin - t_base_cam[2, 3]) / ray[2] * ray)[:2]
+        mask = silhouette_fit.largest_blob_near(labels == i, tuple(centroids[i]))
+        fit = silhouette_fit.fit_xy(spec.vertices, spec.faces, z_origin, t_base_cam, k, mask, (float(init[0]), float(init[1])))
+        if fit.iou >= min_iou and (best is None or fit.iou > best[0]):
+            best = (fit.iou, (fit.x, fit.y))
+    return None if best is None else best[1]
 
 
 def plan_poses(side: str | None, tilt_deg: float = DEFAULT_TILT_DEG, pan_range: tuple[float, float] = DEFAULT_PAN_RANGE,
@@ -183,7 +208,7 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
             stage("shooting", reading.pan_deg, reading.tilt_deg)
             for frame in camera.capture(request.n_frames):
                 stamp = frame.stamp_s
-                init = request.prior_xy or blob_init_xy(frame.rgb, frame.k, spec.hue, t_bc, z_origin)
+                init = request.prior_xy or best_blob_init(spec, frame.rgb, frame.k, t_bc, z_origin)
                 if init is None:
                     continue
                 blobs += 1
@@ -209,4 +234,5 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
     if estimate is None:
         return LocateResult(found=False, shots=tuple(shots), reason=reason or "어느 자세에서도 물체를 못 찾았다", home_ok=home_ok)
     return LocateResult(found=True, x=estimate.x, y=estimate.y, z=estimate.z, n_used=estimate.n_used, n_rejected=estimate.n_rejected,
-                        spread_m=estimate.spread_m, mean_iou=estimate.mean_iou, shots=tuple(shots), reason=reason, home_ok=home_ok)
+                        spread_m=estimate.spread_m, mean_iou=estimate.mean_iou, shots=tuple(shots), reason=reason, home_ok=home_ok,
+                        consistent=estimate.n_used >= request.min_used and estimate.spread_m <= request.spread_tol_m)

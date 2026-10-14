@@ -97,7 +97,8 @@ def main() -> int:
         print(f"못 찾음: {result.reason}")
         return 1
     print(f"{spec.name} 좌표 (x, y, z) = ({result.x:.4f}, {result.y:.4f}, {result.z:.4f}) m · 사용 {result.n_used} 제외 {result.n_rejected} · "
-          f"흩어짐 {1000 * result.spread_m:.1f} mm · IoU {result.mean_iou:.2f}")
+          f"흩어짐 {1000 * result.spread_m:.1f} mm · IoU {result.mean_iou:.2f}"
+          + ("" if result.consistent else " · ⚠ 관측이 부족해 일관성 미확인"))
     return 0 if result.home_ok else 3
 
 
