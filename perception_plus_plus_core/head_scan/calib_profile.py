@@ -26,7 +26,8 @@ def _load():
 
 
 _m = _load()
-AngleEntry, CalibProfile, UncalibratedAngle, FrameAnchor = _m.AngleEntry, _m.CalibProfile, _m.UncalibratedAngle, _m.FrameAnchor
+AngleEntry, CalibProfile, UncalibratedAngle, FrameAnchor, KnownZ = (_m.AngleEntry, _m.CalibProfile, _m.UncalibratedAngle, _m.FrameAnchor,
+                                                                    _m.KnownZ)
 PROFILE_DIR, load_profile, save_profile, bias_for, lookup, anchor_position = (_m.PROFILE_DIR, _m.load_profile, _m.save_profile, _m.bias_for,
                                                                               _m.lookup, _m.anchor_position)
 

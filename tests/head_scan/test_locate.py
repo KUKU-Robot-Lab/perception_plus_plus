@@ -258,3 +258,10 @@ def test_camera_extrinsics_at_replaces_only_the_camera_block(tmp_path):
     pos = np.array(out["camera"]["position"])
     assert pos == pytest.approx(head_fk.t_base_cam(0.0, -30.0)[:3, 3], abs=1e-8)
     assert np.linalg.norm(out["camera"]["orientation_wxyz"]) == pytest.approx(1.0, abs=1e-8)
+
+
+def test_profile_plan_can_be_fixed_to_one_tilt(tmp_path):
+    profile = _profile(tmp_path, [(-40.0, -30.0, (0, 0)), (-20.0, -30.0, (0, 0)), (0.0, -30.0, (0, 0)), (-40.0, -20.0, (0, 0)), (-30.0, -25.0, (0, 0))])
+    poses = locate.plan_poses_from_profile(profile, side="right", tilt_deg=-30.0)
+    assert poses and all(t == -30.0 for _, t in poses)
+    assert set(locate.plan_poses_from_profile(profile, side="right")) > set(poses)

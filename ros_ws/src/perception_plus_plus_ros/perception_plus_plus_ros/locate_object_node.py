@@ -35,12 +35,15 @@ class LocateObjectServer(Node):
         self.declare_parameter("vision_host", "vision-3090")
         self.declare_parameter("action_name", "locate_object")
         self.declare_parameter("calib_profile", "")  # 보정 프로필 이름·경로. 주면 hand-eye 와 각도별 보정, 계획도 프로필 각도로
+        self.declare_parameter("fixed_tilt_deg", -999.0)  # -999 이면 고정 안 함. 값을 주면 그 tilt 로 pan 만 돌린다
         self.declare_parameter("extrinsics", "")  # 비우면 저장소 기본 hand-eye. 후보 yaml 경로를 주면 그 값으로 계산한다
         sim2real = Path(self.get_parameter("sim2real").value)
         self._head = head or adapters.Sim2RealHead(sim2real)
         self._camera = camera or adapters.SshCamera(self.get_parameter("vision_host").value)
         extrinsics = str(self.get_parameter("extrinsics").value)
         self._extrinsics = {"extrinsics_yaml": Path(extrinsics)} if extrinsics else {}
+        tilt = float(self.get_parameter("fixed_tilt_deg").value)
+        self._fixed_tilt = None if tilt == -999.0 else tilt
         name = str(self.get_parameter("calib_profile").value)
         self._profile = calib_profile.load_profile(name) if name else None
         self._lock = threading.Lock()
@@ -77,7 +80,8 @@ class LocateObjectServer(Node):
             spec = objects.load_spec(goal.object_name)
             request = locate.LocateRequest(
                 object_name=spec.name, side=goal.side or None, prior_xy=tuple(goal.prior_xy) if goal.prior_xy else None,
-                max_poses=goal.max_poses or locate.DEFAULT_MAX_POSES)
+                max_poses=goal.max_poses or locate.DEFAULT_MAX_POSES,
+                **({"tilt_deg": self._fixed_tilt, "fixed_tilt": True} if self._fixed_tilt is not None else {}))
 
             def on_stage(stage: str, pan: float, tilt: float) -> None:
                 feedback = LocateObject.Feedback()

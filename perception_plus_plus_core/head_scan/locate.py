@@ -84,6 +84,7 @@ class LocateRequest:
     min_used: int = DEFAULT_MIN_USED
     spread_tol_m: float = DEFAULT_SPREAD_TOL_M
     n_frames: int = 1
+    fixed_tilt: bool = False  # True 면 tilt_deg 하나로 고정해 pan 만 돌린다(프로필 계획에서)
 
 
 @dataclass(frozen=True)
@@ -176,8 +177,8 @@ def plan_poses(side: str | None, tilt_deg: float = DEFAULT_TILT_DEG, pan_range: 
     return chosen + rest
 
 
-def plan_poses_from_profile(profile, side: str | None) -> list[tuple[float, float]]:
-    """보정 프로필의 각도(정수 deg 로 반올림한 명령값)만으로 계획한다: 찾을 쪽 테이블이 많이 보이는 순서."""
+def plan_poses_from_profile(profile, side: str | None, tilt_deg: float | None = None) -> list[tuple[float, float]]:
+    """보정 프로필의 각도(정수 deg 로 반올림한 명령값)만으로 계획한다: 찾을 쪽 테이블이 많이 보이는 순서. tilt_deg 를 주면 그 tilt(±1°)만."""
     if side not in (None, "right", "left"):
         raise ValueError(f"side 는 right/left/None: {side!r}")
     points = scan_poses.table_points()
@@ -186,7 +187,8 @@ def plan_poses_from_profile(profile, side: str | None) -> list[tuple[float, floa
     elif side == "left":
         points = points[points[:, 1] > 0]
     cam = scan_poses.default_camera()
-    candidates = sorted({(float(round(e.pan_deg)), float(round(e.tilt_deg))) for e in profile.entries})
+    candidates = sorted({(float(round(e.pan_deg)), float(round(e.tilt_deg))) for e in profile.entries
+                         if tilt_deg is None or abs(e.tilt_deg - tilt_deg) <= 1.0})
     seen = {c: int(scan_poses.visible_mask(points, head_fk.t_base_cam(*c), cam).sum()) for c in candidates}
     return sorted((c for c in candidates if seen[c]), key=lambda c: (-seen[c], abs(c[0])))
 
@@ -214,7 +216,7 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
     if request.poses:
         poses = list(request.poses)
     elif profile is not None:
-        poses = plan_poses_from_profile(profile, request.side)[:request.max_poses]
+        poses = plan_poses_from_profile(profile, request.side, request.tilt_deg if request.fixed_tilt else None)[:request.max_poses]
     else:
         poses = plan_poses(request.side, request.tilt_deg)[:request.max_poses]
     survey.validate_poses(poses + [HOME_POSE])

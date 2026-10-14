@@ -74,6 +74,8 @@ def main() -> int:
     ap.add_argument("--profile", required=True)
     ap.add_argument("--name", required=True)
     ap.add_argument("--surveys", nargs="+", required=True)
+    ap.add_argument("--known-z", type=float, default=None, metavar="TABLE_TOP_M",
+                    help="상판 높이(m, 줄자 확정 0.205)를 주면 정지 pose 의 z 를 상판 + 원점 높이로 맞춘다(허용 ±15 mm 안일 때만)")
     ap.add_argument("--ref-pan", type=float, default=0.0)
     ap.add_argument("--ref-tilt", type=float, default=-20.0)
     args = ap.parse_args()
@@ -115,7 +117,8 @@ def main() -> int:
 
     anchored = dataclasses.replace(profile, name=args.name, anchor=cpm.FrameAnchor(float(np.degrees(rot)), (float(trans[0]), float(trans[1])), dz,
                                    f"기존 정적 camera 블록 기준 자세(pan {args.ref_pan}/tilt {args.ref_tilt}), 볼트 {len(src)}점"),
-                                   notes=profile.notes + " + 기존 FP++ 좌표계 앵커")
+                                   notes=profile.notes + " + 기존 FP++ 좌표계 앵커" + (" + 아는 z" if args.known_z else ""),
+                                   known_z=cpm.KnownZ(args.known_z, 0.015) if args.known_z else None)
     out = cpm.PROFILE_DIR / f"{args.name}.yaml"
     if out.exists():
         print(f"❌ {out} 가 이미 있다 — 덮어쓰지 않는다", file=sys.stderr)
