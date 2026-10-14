@@ -18,6 +18,7 @@ CANDIDATES = {
     "v3": head_fk.CONFIG_DIR / "head_extrinsics_bolt_v3_candidate.yaml",
     "v4": head_fk.CONFIG_DIR / "head_extrinsics_joint_v4_candidate.yaml",
     "v5": head_fk.CONFIG_DIR / "head_extrinsics_joint_v5_candidate.yaml",
+    "v6(CAD 볼트만)": head_fk.CONFIG_DIR / "head_extrinsics_cad_v6_candidate.yaml",
 }
 
 
