@@ -27,7 +27,7 @@ from perception_plus_plus_core.head_scan import calib_profile as cpm, head_fk, r
 Z = B.T.TABLE_TOP_Z
 
 
-def collect(surveys, captures, hand_eye: Path):
+def collect(surveys, captures, hand_eye: Path, min_bolts: int = 5):
     """(명령 자세 → [프레임 기록]) 볼트 검출은 hand-eye 후보를 사전 자세로 쓴다."""
     holes = B.T.cad_holes()
     sources = []
@@ -39,7 +39,7 @@ def collect(surveys, captures, hand_eye: Path):
     for path, commanded, (pan, tilt) in sources:
         z = np.load(path)
         img, obj = B.detect(cv2.cvtColor(z["rgb"], cv2.COLOR_RGB2GRAY), z["K"], head_fk.t_base_cam(pan, tilt, hand_eye), holes)
-        if len(img) < 5:
+        if len(img) < min_bolts:
             continue
         det = refit.Detection(pan, tilt, "bolt", np.arange(len(img)), img, z["K"])
         est = refit._ground_xy(det, refit.Params(), Z, hand_eye)
@@ -68,9 +68,10 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--no-bias", action="store_true")
     ap.add_argument("--lenient", action="store_true", help="표에 없는 각도도 보정 0 으로 통과(기본은 거부)")
+    ap.add_argument("--min-bolts", type=int, default=5, help="프레임에서 이 개수 이상 볼트가 잡혀야 쓴다(4 로 낮추면 2x2 한 무리뿐이라 그 근처에만 정확하다)")
     ap.add_argument("--notes", default="")
     args = ap.parse_args()
-    groups = collect(args.surveys, args.captures, args.hand_eye)
+    groups = collect(args.surveys, args.captures, args.hand_eye, args.min_bolts)
     profile = build(args.name, args.hand_eye, groups, not args.no_bias, not args.lenient,
                     args.notes or f"hand-eye {args.hand_eye.name}, 각도 {len(groups)}개, {'평행이동 보정 포함' if not args.no_bias else '보정 없음'}")
     out = args.out or cpm.PROFILE_DIR / f"{args.name}.yaml"
