@@ -52,3 +52,37 @@ def test_estimate_standing_returns_none_without_a_usable_mask():
     verts, faces = _mesh()
     blank = sp.StandingObs(np.full((480, 640, 3), 20, np.uint8), K, 0.0, -20.0, (0.22, 0.06))
     assert sp.estimate_standing([blank], verts, faces, ORIGIN_ABOVE_BOTTOM, _hue()) is None
+
+
+HOLDER_ORIGIN_Z = 0.235  # 받침 윗면(sim2real cup_holders.yaml). 컵 바닥은 이보다 25 mm 아래.
+HOLDER_RING_RADIUS = 0.040
+HOLDER_RING_BOTTOM, HOLDER_RING_TOP = -0.030, 0.030
+CUP_BOTTOM_IN_HOLDER = HOLDER_ORIGIN_Z - 0.025
+
+
+def _holder_ring():
+    m = trimesh.creation.cylinder(radius=HOLDER_RING_RADIUS, height=HOLDER_RING_TOP - HOLDER_RING_BOTTOM, sections=48)
+    return m.vertices + np.array([0, 0, (HOLDER_RING_TOP + HOLDER_RING_BOTTOM) / 2]), m.faces
+
+
+def _obs_in_holder(pan, truth_xy, init_offset=(0.01, -0.008)):
+    """홀더 링이 컵 아랫부분을 가린 영상(링이 앞에 있으니 링 실루엣 안의 컵 화소는 지운다)."""
+    verts, faces = _mesh()
+    t_bc = head_fk.t_base_cam(pan, -20.0)
+    cup = sf.render_silhouette(verts + np.r_[truth_xy, CUP_BOTTOM_IN_HOLDER + ORIGIN_ABOVE_BOTTOM], faces, t_bc, K, (480, 640))
+    ring_v, ring_f = _holder_ring()
+    ring = sf.render_silhouette(ring_v + np.r_[truth_xy, HOLDER_ORIGIN_Z], ring_f, t_bc, K, (480, 640))
+    rgb = np.full((480, 640, 3), 20, np.uint8)
+    rgb[cup & ~ring] = BLUE_RGB
+    return sp.StandingObs(rgb, K, pan, -20.0, (truth_xy[0] + init_offset[0], truth_xy[1] + init_offset[1]))
+
+
+def test_estimate_standing_in_holder_uses_given_base_z_and_ignores_occluded_part():
+    truth = (0.38, 0.07)
+    verts, faces = _mesh()
+    ring_v, ring_f = _holder_ring()
+    est = sp.estimate_standing([_obs_in_holder(p, truth) for p in (-30.0, 0.0, 30.0)], verts, faces, ORIGIN_ABOVE_BOTTOM,
+                               _hue(), base_z=CUP_BOTTOM_IN_HOLDER, occluder=(ring_v, ring_f, HOLDER_ORIGIN_Z))
+    assert est is not None and est.n_used == 3
+    assert (est.x, est.y) == pytest.approx(truth, abs=2e-3)
+    assert est.z == pytest.approx(CUP_BOTTOM_IN_HOLDER + ORIGIN_ABOVE_BOTTOM)

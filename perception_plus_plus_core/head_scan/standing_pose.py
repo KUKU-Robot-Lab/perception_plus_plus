@@ -46,9 +46,14 @@ class StandingEstimate:
 
 def estimate_standing(observations: list[StandingObs], vertices_body: np.ndarray, faces: np.ndarray,
                       origin_above_bottom: float, hue: float, extrinsics_yaml: Path | str = head_fk.EXTRINSICS_YAML,
-                      min_iou: float = DEFAULT_MIN_IOU, reject_m: float = DEFAULT_REJECT_M) -> StandingEstimate | None:
-    """관측들에서 (x, y) 를 구한다. 쓸 만한 관측이 없으면 None(값을 만들어 내지 않는다)."""
-    z_origin = TABLE_TOP_Z + origin_above_bottom
+                      min_iou: float = DEFAULT_MIN_IOU, reject_m: float = DEFAULT_REJECT_M,
+                      base_z: float = TABLE_TOP_Z,
+                      occluder: tuple[np.ndarray, np.ndarray, float] | None = None) -> StandingEstimate | None:
+    """관측들에서 (x, y) 를 구한다. 쓸 만한 관측이 없으면 None(값을 만들어 내지 않는다).
+
+    base_z 는 물체 바닥이 닿는 높이(기본 상판, 홀더 안이면 홀더 안쪽 바닥), occluder 는 `silhouette_fit.fit_xy` 참고.
+    """
+    z_origin = base_z + origin_above_bottom
     fits = []
     for obs in observations:
         t_bc = head_fk.t_base_cam(obs.pan_deg, obs.tilt_deg, extrinsics_yaml)
@@ -56,7 +61,7 @@ def estimate_standing(observations: list[StandingObs], vertices_body: np.ndarray
         mask = silhouette_fit.largest_blob_near(silhouette_fit.hue_mask(obs.rgb, hue), tuple(uv[0]))
         if mask.sum() < MIN_MASK_PX:
             continue
-        fit = silhouette_fit.fit_xy(vertices_body, faces, z_origin, t_bc, obs.k, mask, obs.xy_init)
+        fit = silhouette_fit.fit_xy(vertices_body, faces, z_origin, t_bc, obs.k, mask, obs.xy_init, occluder=occluder)
         if fit.iou >= min_iou:
             fits.append(fit)
     if not fits:

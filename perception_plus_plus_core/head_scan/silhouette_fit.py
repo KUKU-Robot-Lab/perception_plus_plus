@@ -85,14 +85,21 @@ def iou(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def fit_xy(vertices_body: np.ndarray, faces: np.ndarray, z_origin: float, t_base_cam: np.ndarray, k: np.ndarray,
-           mask: np.ndarray, xy_init: tuple[float, float], search_m: float = 0.03) -> FitResult:
+           mask: np.ndarray, xy_init: tuple[float, float], search_m: float = 0.03,
+           occluder: tuple[np.ndarray, np.ndarray, float] | None = None) -> FitResult:
     """원점이 (x, y, z_origin), 자세 항등(Z-up)인 메시의 실루엣이 mask 와 가장 겹치는 (x, y) 를 찾는다.
 
     xy_init 에서 ±search_m 안에서만 찾는다(마스크가 다른 물체를 잡았을 때 멀리 달아나지 않게).
+    occluder=(꼭짓점, 삼각형, 원점 z) 는 물체와 같은 (x, y) 에 서서 앞을 가리는 것(홀더 링 등)이다 — 그 실루엣 안의 화소는
+    맞춤에서 뺀다(가려진 부분을 마스크에 없다고 벌하지 않게).
     """
     def cost(p):
         verts = vertices_body + np.array([p[0], p[1], z_origin])
-        return -iou(render_silhouette(verts, faces, t_base_cam, k, mask.shape), mask)
+        sil, target = render_silhouette(verts, faces, t_base_cam, k, mask.shape), mask
+        if occluder is not None:
+            occ = render_silhouette(occluder[0] + np.array([p[0], p[1], occluder[2]]), occluder[1], t_base_cam, k, mask.shape)
+            sil, target = sil & ~occ, mask & ~occ
+        return -iou(sil, target)
 
     init = np.asarray(xy_init, dtype=float)
     init_iou = -cost(init)
