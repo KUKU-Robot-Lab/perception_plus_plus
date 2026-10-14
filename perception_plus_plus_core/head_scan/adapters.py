@@ -1,6 +1,9 @@
-"""실기 포트 구현 — `locate.HeadPort`·`CameraPort` 를 기존 도구(head_home.py, save_color_frame.py)로 채운다.
+"""실기 포트 구현 — `locate.HeadPort`·`CameraPort` 를 기존 도구(head_move.py, save_color_frame.py)로 채운다.
 
-목: sim2real `scripts/head_home.py --execute` 를 부른다(토크 off, 모드, 게인, 목표, 토크 on 순서를 지키는 유일한 경로).
+목: sim2real `scripts/head_move.py --execute` 를 부른다. 목 시리얼 포트는 `head_joint_publisher.py` 한 프로세스가 단독으로
+맡고(2026-10-15 사용자 결정), head_move 는 포트를 열지 않고 그 프로세스에 이동을 요청한다(게인 순서·정착 검증은 드라이버가 한다).
+드라이버가 없으면 요청이 실패한다 — 먼저 띄울 것. 옛 직접 경로(`head_home.py`)는 `legacy_head_home=True` 로만 쓰며 드라이버가
+떠 있으면 포트 잠금에 막힌다.
 카메라: vision-3090 에서 `save_color_frame.py` 를 ssh 로 돌려 npz 를 받는다. 자세마다 몇 초 걸린다(v1).
 이 모듈의 함수는 목을 움직이므로 호출 전에 사용자 허락이 있어야 한다(허락은 호출 한 번에만 유효).
 """
@@ -18,9 +21,10 @@ import numpy as np
 from . import locate, survey
 
 SIM2REAL = Path.home() / "rl_ws/sim2real"
-#: 목을 직접 명령하는 스크립트 파일명 — 같은 시리얼 포트를 쓰므로 동시에 돌면 안 된다. 팔 pd·손 노드는 목을 건드리지 않아 해당 없음.
-# head_joint_publisher.py 는 목 각도를 읽어 발행만 한다(토크·게인·목표를 안 쓴다, 사용자 승인 2026-10-14) — 목록에서 제외.
-HEAD_COMMANDER_SCRIPTS = frozenset({"head_home.py", "head_compliant_hold.py", "head_position_hold_node.py",
+#: 목을 명령하는 스크립트 파일명 — 두 명령자가 동시에 목을 움직이면 안 된다. 팔 pd·손 노드는 목을 건드리지 않아 해당 없음.
+# head_joint_publisher.py 는 포트의 단독 소유자라 목록에서 제외한다(이동 요청은 한 번에 하나만 받고, 이동 중 새 요청은 busy 로 거절,
+# 다른 프로세스가 포트를 직접 열면 port_lock 이 거절한다). 이 목록은 그 위의 이른 경고다.
+HEAD_COMMANDER_SCRIPTS = frozenset({"head_home.py", "head_move.py", "head_compliant_hold.py", "head_position_hold_node.py",
                                     "survey_head_poses.py", "locate_object.py"})
 
 
@@ -46,22 +50,23 @@ def busy_head_commanders() -> list[str]:
 
 
 class Sim2RealHead:
-    """`head_home.py` 로 목을 움직이고 정착 뒤 30샘플 평균을 실측 각도로 돌려준다."""
+    """`head_move.py` 로 목 드라이버에 이동을 요청하고 정착 뒤 실측 각도(정착 창 평균)를 돌려준다."""
 
-    def __init__(self, sim2real: Path = SIM2REAL):
+    def __init__(self, sim2real: Path = SIM2REAL, legacy_head_home: bool = False):
         self.sim2real = sim2real
+        self.script = "scripts/head_home.py" if legacy_head_home else "scripts/head_move.py"
 
     def _run(self, pan: float | None, tilt: float | None) -> survey.HeadReading:
-        cmd = [str(self.sim2real / ".venv/bin/python"), str(self.sim2real / "scripts/head_home.py"), "--execute"]
+        cmd = [str(self.sim2real / ".venv/bin/python"), str(self.sim2real / self.script), "--execute"]
         if pan is not None:
             cmd += ["--pan", str(pan), "--tilt", str(tilt)]
         res = run(cmd, cwd=self.sim2real, timeout=90)
         try:
             reading = survey.parse_head_home(res.stdout)
         except ValueError as exc:
-            raise RuntimeError(f"head_home 출력을 못 읽음 rc={res.returncode}: {res.stdout[-300:]}{res.stderr[-300:]}") from exc
+            raise RuntimeError(f"{self.script} 출력을 못 읽음 rc={res.returncode}: {res.stdout[-300:]}{res.stderr[-300:]}") from exc
         if res.returncode != 0 and not survey.accept(reading):
-            raise RuntimeError(f"head_home 정착 실패 rc={res.returncode}: 실측 {reading}")
+            raise RuntimeError(f"{self.script} 정착 실패 rc={res.returncode}: 실측 {reading}")
         return reading
 
     def move(self, pan_deg: float, tilt_deg: float) -> survey.HeadReading:

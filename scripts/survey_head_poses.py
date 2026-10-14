@@ -5,6 +5,7 @@
     python3 scripts/survey_head_poses.py --out-dir <폴더> --execute        # 실제 실행(목이 움직인다)
 
 ★`--execute` 는 목을 움직인다 — sim2real 규칙대로 사용자 허락 뒤에만. 허락은 이 한 번의 실행 전체를 덮는다.
+목은 `head_joint_publisher`(단독 소유자)가 떠 있어야 한다 — 이동은 `head_move.py` 로 요청한다.
 순서: 사전 점검(로봇 세션이 돌면 중단) → 런처·수신기 기동 → FP++ 켜기 → 자세마다 [head_home(실측 평균) → 영상 저장 →
 fpp_rescan → 원시 포즈 수집] → **항상** 기준 자세로 복귀 → 띄운 프로세스 종료. 자세 검증이 실패하면 거기서 멈추고 복귀한다.
 tilt 는 인코더 기준 `--max-tilt`(기본 -10°) 이하만 허용한다(중력 방향 한계). 컨테이너는 내리지 않는다.
@@ -43,7 +44,7 @@ def busy_robot_processes() -> list[str]:
 
 
 def head_home(sim2real: Path, pan: float | None, tilt: float | None) -> survey.HeadReading:
-    cmd = [str(sim2real / ".venv/bin/python"), str(sim2real / "scripts/head_home.py"), "--execute"]
+    cmd = [str(sim2real / ".venv/bin/python"), str(sim2real / "scripts/head_move.py"), "--execute"]
     if pan is not None:
         cmd += ["--pan", str(pan), "--tilt", str(tilt)]
     res = run(cmd, cwd=sim2real, timeout=90)
