@@ -43,14 +43,28 @@ def test_blob_init_xy_returns_none_when_nothing_matches_the_hue():
     assert locate.blob_init_xy(blank, K, _hue(), head_fk.t_base_cam(0.0, -20.0), 0.27) is None
 
 
-def test_plan_poses_for_right_side_prefers_pans_that_see_negative_y_and_respects_tilt_limit():
-    poses = locate.plan_poses(side="right", tilt_deg=-20.0)
-    assert poses and all(t == -20.0 for _, t in poses)
-    # 오른쪽(y<0) 테이블이 화면 중앙에 가까운 자세가 먼저 온다 — 첫 자세와 마지막 자세의 pan 이 달라야 의미가 있다.
-    assert len({p for p, _ in poses}) == len(poses)
-    t_first = head_fk.t_base_cam(*poses[0])
-    forward = t_first[:3, 2]  # 카메라 광축(base 기준)
+def test_plan_poses_covers_the_whole_requested_side_including_the_far_edge():
+    import numpy as np
+
+    from perception_plus_plus_core.head_scan import scan_poses
+
+    poses = locate.plan_poses(side="right")
+    assert poses and len(set(poses)) == len(poses)
+    assert all(tilt <= -10.0 for _, tilt in poses)
+    points = scan_poses.table_points()
+    right = points[points[:, 1] < 0]
+    cam = scan_poses.default_camera()
+    covered = np.zeros(len(right), dtype=bool)
+    for pan, tilt in poses:
+        covered |= scan_poses.visible_mask(right, head_fk.t_base_cam(pan, tilt), cam)
+    assert covered.mean() >= 0.99, "오른쪽 가장자리까지 덮지 못한다"
+    forward = head_fk.t_base_cam(*poses[0])[:3, 2]
     assert forward[1] < 0.15, "오른쪽을 찾는데 첫 자세가 왼쪽을 본다"
+
+
+def test_plan_poses_left_side_looks_left_first():
+    poses = locate.plan_poses(side="left")
+    assert head_fk.t_base_cam(*poses[0])[:3, 2][1] > -0.15
 
 
 def test_locate_finds_object_and_returns_home():

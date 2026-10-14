@@ -23,8 +23,10 @@ from . import head_fk, scan_poses, silhouette_fit, standing_pose, survey
 HOME_POSE = (0.0, -20.0)
 StageCallback = Callable[[str, float, float], None]
 DEFAULT_TILT_DEG = -20.0
-DEFAULT_PAN_RANGE = (-45.0, 45.0)
-DEFAULT_PAN_STEP = 15.0
+DEFAULT_PAN_RANGE = (-90.0, 90.0)
+DEFAULT_PAN_STEP = 10.0
+#: 테이블 먼 가장자리를 화면에 넣으려면 더 위를 봐야 한다(tilt 더 음수). 이 tilt 에서 컵 검출이 흔들린 적이 있어 첫 후보는 아니다.
+EXTRA_TILTS_DEG = (-30.0,)
 #: 이 화소 수 미만의 색 덩어리는 물체로 보지 않는다.
 MIN_BLOB_PX = 200
 #: 서로 일관된 관측이 이만큼 모이고 흩어짐이 허용 이하면 더 찍지 않는다.
@@ -125,8 +127,12 @@ def blob_init_xy(rgb: np.ndarray, k: np.ndarray, hue: float, t_base_cam: np.ndar
 
 
 def plan_poses(side: str | None, tilt_deg: float = DEFAULT_TILT_DEG, pan_range: tuple[float, float] = DEFAULT_PAN_RANGE,
-               pan_step: float = DEFAULT_PAN_STEP) -> list[tuple[float, float]]:
-    """찾을 쪽 테이블이 많이 보이는 pan 부터 정렬한 후보 자세. side: 'right'(y<0)·'left'(y>0)·None."""
+               pan_step: float = DEFAULT_PAN_STEP, extra_tilts: tuple[float, ...] = EXTRA_TILTS_DEG) -> list[tuple[float, float]]:
+    """찾을 쪽 테이블을 덮는 자세를 앞에 두고(탐욕 덮기), 이어서 그 쪽이 많이 보이는 나머지 후보를 중복 시점용으로 붙인다.
+
+    side: 'right'(y<0)·'left'(y>0)·None. 후보는 pan_range 안 pan_step 간격과 tilt_deg·extra_tilts 의 조합이다.
+    tilt 한계(중력 쪽 -10°)는 `survey.validate_poses` 가 실행 전에 막는다.
+    """
     if side not in (None, "right", "left"):
         raise ValueError(f"side 는 right/left/None: {side!r}")
     points = scan_poses.table_points()
@@ -135,12 +141,13 @@ def plan_poses(side: str | None, tilt_deg: float = DEFAULT_TILT_DEG, pan_range: 
     elif side == "left":
         points = points[points[:, 1] > 0]
     cam = scan_poses.default_camera()
-    scored = []
-    for pan in scan_poses._grid(pan_range, pan_step):
-        seen = int(scan_poses.visible_mask(points, head_fk.t_base_cam(pan, tilt_deg), cam).sum())
-        if seen:
-            scored.append((-seen, abs(pan), pan))
-    return [(pan, tilt_deg) for _, _, pan in sorted(scored)]
+    tilts = [tilt_deg, *extra_tilts]
+    candidates = [(pan, tilt) for tilt in tilts for pan in scan_poses._grid(pan_range, pan_step)]
+    seen = {c: int(scan_poses.visible_mask(points, head_fk.t_base_cam(*c), cam).sum()) for c in candidates}
+    cover = scan_poses.greedy_scan_set(points, pan_range, (min(tilts), max(tilts)), step_deg=pan_step, target=0.99, cam=cam)
+    chosen = [tuple(map(float, c)) for c in cover.poses if c in seen]
+    rest = sorted((c for c in candidates if c not in chosen and seen[c]), key=lambda c: (-seen[c], tilts.index(c[1]), abs(c[0])))
+    return chosen + rest
 
 
 def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, camera: CameraPort, table_z: float = standing_pose.TABLE_TOP_Z,
