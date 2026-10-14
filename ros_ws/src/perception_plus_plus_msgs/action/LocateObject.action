@@ -1,0 +1,24 @@
+# 테이블 위 알려진 물체 하나를 목을 돌려 찾고 base_link 좌표를 돌려준다. 끝나면 목은 기준 자세(pan 0, tilt -20)로 복귀한다.
+# /objects/<name>/pose 는 발행하지 않는다(그 토픽은 object_pose_node 하나가 낸다).
+
+# --- goal ---
+string object_name          # 물체 이름 또는 별칭(source240b_blue, blue_cup, shaker_c_orange, ...)
+string side                 # "right" | "left" | "" (로봇 기준 찾을 쪽, 비면 전체)
+float64[] prior_xy          # 사전 위치 [x, y] (base, m). 비우면 색 덩어리로 찾는다
+uint8 max_poses             # 0 이면 기본값
+---
+# --- result ---
+bool found                  # false 이면 pose 는 무의미(0). 값을 만들어 내지 않는다
+geometry_msgs/PoseStamped pose   # frame_id base_link, 자세는 항등(똑바로 선 물체). header.stamp = 촬영 시각(영상 시각)
+float64 shot_pan_deg        # 촬영 순간 목 실측 각도(인코더 deg)
+float64 shot_tilt_deg
+float64 spread_m            # 채택 관측 사이 흩어짐
+float64 mean_iou            # 실루엣 일치도(0~1)
+uint8 n_used
+bool home_ok                # 기준 자세 복귀 확인 여부
+string reason               # 실패·취소 이유
+---
+# --- feedback ---
+string stage                # planning | moving | shooting | fitting | returning
+float64 pan_deg
+float64 tilt_deg

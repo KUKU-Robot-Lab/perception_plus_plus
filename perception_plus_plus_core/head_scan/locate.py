@@ -10,6 +10,7 @@ FPP 는 쓰지 않는다 — 색 마스크 덩어리를 광선-평면 교점으�
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -20,6 +21,7 @@ import numpy as np
 from . import head_fk, scan_poses, silhouette_fit, standing_pose, survey
 
 HOME_POSE = (0.0, -20.0)
+StageCallback = Callable[[str, float, float], None]
 DEFAULT_TILT_DEG = -20.0
 DEFAULT_PAN_RANGE = (-45.0, 45.0)
 DEFAULT_PAN_STEP = 15.0
@@ -142,8 +144,18 @@ def plan_poses(side: str | None, tilt_deg: float = DEFAULT_TILT_DEG, pan_range: 
 
 
 def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, camera: CameraPort, table_z: float = standing_pose.TABLE_TOP_Z,
-                  extrinsics_yaml: Path | str = head_fk.EXTRINSICS_YAML) -> LocateResult:
-    """요청을 처리한다. 자세가 한계를 넘으면 움직이기 전에 ValueError. 그 밖의 실패는 결과의 reason 에 담는다."""
+                  extrinsics_yaml: Path | str = head_fk.EXTRINSICS_YAML, on_stage: StageCallback | None = None,
+                  should_stop: Callable[[], bool] | None = None) -> LocateResult:
+    """요청을 처리한다. 자세가 한계를 넘으면 움직이기 전에 ValueError. 그 밖의 실패는 결과의 reason 에 담는다.
+
+    on_stage(단계, pan, tilt) 는 planning·moving·shooting·fitting·returning 순으로 불린다. should_stop() 이 참이면 다음 자세로
+    가지 않고 복귀한다(취소). 둘 다 없어도 된다.
+    """
+    def stage(name: str, pan: float = 0.0, tilt: float = 0.0) -> None:
+        if on_stage:
+            on_stage(name, pan, tilt)
+
+    stage("planning")
     poses = list(request.poses) if request.poses else plan_poses(request.side, request.tilt_deg)[:request.max_poses]
     survey.validate_poses(poses + [HOME_POSE])
     z_origin = table_z + spec.origin_above_bottom
@@ -153,9 +165,14 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
     reason = ""
     try:
         for pan, tilt in poses:
+            if should_stop and should_stop():
+                reason, estimate = "취소됨", None  # 취소는 부분 결과를 내지 않는다
+                break
+            stage("moving", pan, tilt)
             reading = head.move(pan, tilt)
             t_bc = head_fk.t_base_cam(reading.pan_deg, reading.tilt_deg, extrinsics_yaml)
             blobs, stamp = 0, 0.0
+            stage("shooting", reading.pan_deg, reading.tilt_deg)
             for frame in camera.capture(request.n_frames):
                 stamp = frame.stamp_s
                 init = request.prior_xy or blob_init_xy(frame.rgb, frame.k, spec.hue, t_bc, z_origin)
@@ -166,6 +183,7 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
             shots.append(Shot(reading.pan_deg, reading.tilt_deg, stamp, blobs))
             if not blobs:
                 continue
+            stage("fitting", reading.pan_deg, reading.tilt_deg)
             estimate = standing_pose.estimate_standing(observations, spec.vertices, spec.faces, spec.origin_above_bottom, spec.hue,
                                                        extrinsics_yaml, base_z=table_z)
             if estimate and estimate.n_used >= request.min_used and estimate.spread_m <= request.spread_tol_m:
@@ -174,6 +192,7 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
         reason = str(exc)
         estimate = None
     home_ok = True
+    stage("returning", *HOME_POSE)
     try:
         home_ok = bool(head.go_home().ok)
     except Exception as exc:  # noqa: BLE001

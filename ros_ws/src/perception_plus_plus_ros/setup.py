@@ -23,5 +23,6 @@ setup(
     entry_points={"console_scripts": [
         "cup_tracking_node = perception_plus_plus_ros.node:main",
         "anchored_cup_tracking_node = perception_plus_plus_ros.anchored_node:main",
+        "locate_object_node = perception_plus_plus_ros.locate_object_node:main",
     ]},
 )

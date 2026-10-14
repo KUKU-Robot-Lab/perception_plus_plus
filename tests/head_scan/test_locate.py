@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 import trimesh
 
-from perception_plus_plus_core.head_scan import head_fk, locate, silhouette_fit as sf, survey
+from perception_plus_plus_core.head_scan import fakes, head_fk, locate
 
 K = np.array([[606.6, 0, 320.0], [0, 605.7, 240.6], [0, 0, 1.0]])
 HEIGHT = 0.13
@@ -22,39 +22,11 @@ def _spec():
                              origin_above_bottom=ORIGIN_ABOVE_BOTTOM, hue=_hue())
 
 
-class FakeHead:
-    """목 포트 가짜. 명령한 각도를 그대로 실측으로 돌려주고, 이동·복귀 호출을 기록한다."""
-
-    def __init__(self, fail_on_move=None):
-        self.moves = []
-        self.homed = 0
-        self.fail_on_move = fail_on_move
-
-    def move(self, pan, tilt):
-        if self.fail_on_move is not None and len(self.moves) == self.fail_on_move:
-            raise RuntimeError("목 이동 실패")
-        self.moves.append((pan, tilt))
-        return survey.HeadReading(pan_deg=pan, tilt_deg=tilt, ok=True)
-
-    def go_home(self):
-        self.homed += 1
-        return survey.HeadReading(pan_deg=0.0, tilt_deg=-20.0, ok=True)
+def FakeCamera(head, truth_xy, spec):  # noqa: N802 - 테스트 가독성용 짧은 팩토리
+    return fakes.FakeCamera(head, truth_xy, spec, BLUE_RGB, TABLE_Z)
 
 
-class FakeCamera:
-    """카메라 포트 가짜. 마지막으로 명령한 목 자세에서 컵이 보이는 영상을 렌더한다(안 보이면 빈 영상)."""
-
-    def __init__(self, head, truth_xy, spec):
-        self.head, self.truth, self.spec = head, truth_xy, spec
-
-    def capture(self, n_frames=1):
-        pan, tilt = self.head.moves[-1]
-        t_bc = head_fk.t_base_cam(pan, tilt)
-        verts = self.spec.vertices + np.r_[self.truth, TABLE_Z + ORIGIN_ABOVE_BOTTOM]
-        sil = sf.render_silhouette(verts, self.spec.faces, t_bc, K, (480, 640))
-        rgb = np.full((480, 640, 3), 20, np.uint8)
-        rgb[sil] = BLUE_RGB
-        return [locate.Frame(rgb=rgb, k=K, stamp_s=float(i)) for i in range(n_frames)]
+FakeHead = fakes.FakeHead
 
 
 def test_blob_init_xy_recovers_position_without_any_prior():
@@ -142,3 +114,37 @@ def test_find_head_commanders_matches_scripts_not_substrings_in_arguments():
     ]
     found = adapters.find_head_commanders(lines, own_pid=104)
     assert [ln.split()[0] for ln in found] == ["100", "101"]
+
+
+def test_locate_reports_stages_in_order_and_ends_with_returning():
+    spec = _spec()
+    head = FakeHead()
+    stages = []
+    locate.locate_object(locate.LocateRequest(object_name="blue_cup", side="right", max_poses=1), spec, head,
+                         FakeCamera(head, (0.22, -0.12), spec), table_z=TABLE_Z, on_stage=lambda stage, pan, tilt: stages.append(stage))
+    assert stages[0] == "planning"
+    assert stages.index("moving") < stages.index("shooting") < stages.index("fitting") < stages.index("returning")
+    assert stages[-1] == "returning"
+
+
+def test_locate_stops_and_goes_home_when_cancelled():
+    spec = _spec()
+    head = FakeHead()
+    result = locate.locate_object(locate.LocateRequest(object_name="blue_cup", side="right", max_poses=5), spec, head,
+                                  FakeCamera(head, (5.0, 5.0), spec), table_z=TABLE_Z, should_stop=lambda: len(head.moves) >= 1)
+    assert not result.found and "취소" in result.reason
+    assert len(head.moves) == 1 and head.homed == 1
+
+
+def test_repeatability_separates_frame_noise_from_return_to_pose_scatter():
+    from perception_plus_plus_core.head_scan import repeatability
+
+    spec, truth = _spec(), (0.22, -0.12)
+    head = FakeHead()
+    report = repeatability.run(head, FakeCamera(head, truth, spec), spec, pose=(-15.0, -20.0), detour=(15.0, -20.0),
+                               n_visits=3, n_frames=2, table_z=TABLE_Z)
+    assert len(report.visits) == 3 and all(len(v.fits) == 2 for v in report.visits)
+    assert head.moves == [(-15.0, -20.0), (15.0, -20.0), (-15.0, -20.0), (15.0, -20.0), (-15.0, -20.0)]
+    assert report.frame_noise_m < 1e-3 and report.visit_scatter_m < 1e-3
+    assert report.angle_scatter_deg == pytest.approx(0.0, abs=1e-9)
+    assert head.homed == 1

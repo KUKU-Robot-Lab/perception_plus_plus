@@ -33,6 +33,22 @@ def start_perception(sim2real: Path, vision_host: str, names: list[str]) -> subp
     return launcher
 
 
+def run_fake(args, spec, request) -> int:
+    """가짜 목·카메라로 전체 흐름을 돌린다(로봇·카메라·ssh 없음)."""
+    import cv2
+    import numpy as np
+
+    from perception_plus_plus_core.head_scan import fakes
+
+    truth = tuple(float(v) for v in args.fake.split(","))
+    color = tuple(int(c) for c in cv2.cvtColor(np.array([[[int(spec.hue), 255, 255]]], np.uint8), cv2.COLOR_HSV2RGB)[0, 0])
+    head = fakes.FakeHead()
+    result = locate.locate_object(request, spec, head, fakes.FakeCamera(head, truth, spec, color))
+    print(f"[fake] 이동 {head.moves} · 복귀 {head.homed}회")
+    print(f"[fake] 찾음={result.found}" + (f" 좌표 ({result.x:.4f}, {result.y:.4f}, {result.z:.4f}) 정답 {truth}" if result.found else f" {result.reason}"))
+    return 0 if result.found else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("object", help=f"물체 이름 {sorted(objects.OBJECTS)} 또는 별칭 {sorted(objects.ALIASES)}")
@@ -44,6 +60,7 @@ def main() -> int:
     ap.add_argument("--sim2real", type=Path, default=adapters.SIM2REAL)
     ap.add_argument("--vision-host", default="vision-3090")
     ap.add_argument("--start-perception", action="store_true")
+    ap.add_argument("--fake", metavar="X,Y", help="로봇 없이 가짜 목·카메라로 돌린다(물체가 (X,Y) 에 있다고 치고 렌더). 목은 안 움직인다")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--execute", action="store_true")
     args = ap.parse_args()
@@ -55,6 +72,8 @@ def main() -> int:
     plan = poses or locate.plan_poses(args.side, request.tilt_deg)[:args.max_poses]
     survey.validate_poses(plan + [locate.HOME_POSE])
     print(f"물체 {spec.name} · 쪽 {args.side} · 후보 자세 {plan} · 자세당 {args.frames}장 · 끝나면 {locate.HOME_POSE} 로 복귀")
+    if args.fake:
+        return run_fake(args, spec, request)
     if args.dry_run or not args.execute:
         busy = adapters.busy_head_commanders()
         print(f"[dry-run] 목을 명령하는 다른 프로세스 {len(busy)}개" + "".join(f"\n  {b}" for b in busy))
