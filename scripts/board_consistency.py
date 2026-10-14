@@ -88,7 +88,8 @@ def main() -> int:
                   f"z 0.200 → {1000 * at[0.200]:.2f} mm · z 0.205 → {1000 * at[0.205]:.2f} mm")
         for d in dets:
             scale, resid = bc.grid_scale(pose_obs(d, yaml_path, offset_b=False), 0.200)
-            print(f"   자세 {d['rec']['commanded']} 보드 {d['board']}: 격자 배율 {scale:.4f} · 잔차 {1000 * resid:.2f} mm")
+            z_unit = bc.z_for_unit_scale(pose_obs(d, yaml_path, offset_b=False))
+            print(f"   자세 {d['rec']['commanded']} 보드 {d['board']}: 격자 배율(z 0.200) {scale:.4f} · 잔차 {1000 * resid:.2f} mm · 배율 1.000 이 되는 높이 {z_unit:.3f}")
     return 0
 
 

@@ -157,3 +157,10 @@ def grid_scale(obs: PoseObs, z: float) -> tuple[float, float]:
     fits = [_similarity_fit(xy, nominal), _similarity_fit(xy, nominal * np.array([1.0, -1.0]))]
     scale, resid = min(fits, key=lambda f: f[1])
     return scale, resid
+
+
+def z_for_unit_scale(obs: PoseObs, z_lo: float = 0.17, z_hi: float = 0.26, steps: int = 91) -> float:
+    """격자 배율이 1.000 이 되는 보드 높이(한 자세에서의 거리·내부 파라미터 일관성 기반 높이 추정). 못 찾으면 nan."""
+    zs = np.linspace(z_lo, z_hi, steps)
+    diffs = np.array([grid_scale(obs, float(z))[0] - 1.0 for z in zs])
+    return float(zs[int(np.argmin(np.abs(diffs)))]) if np.min(np.abs(diffs)) < 0.01 else float("nan")
