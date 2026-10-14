@@ -36,8 +36,10 @@ def run(cmd, **kw):
 def busy_robot_processes() -> list[str]:
     out = run(["ps", "-eo", "pid,cmd"]).stdout.splitlines()
     # 상황판(s2r_console) UI·브리지는 노드 이름을 인자로 들고 있을 뿐 로봇을 움직이는 프로세스가 아니다.
+    # 손 상태 노드(rh56f1_state_node)는 손 상태를 읽어 발행만 하고 목은 건드리지 않는다(사용자 승인 2026-10-14, 이 노드만 제외).
     return [ln.strip()[:120] for ln in out
-            if any(m in ln for m in BUSY_MARKERS) and "survey_head_poses" not in ln and "s2r_console" not in ln]
+            if any(m in ln for m in BUSY_MARKERS) and "survey_head_poses" not in ln and "s2r_console" not in ln
+            and "rh56f1_state_node" not in ln]
 
 
 def head_home(sim2real: Path, pan: float | None, tilt: float | None) -> survey.HeadReading:
