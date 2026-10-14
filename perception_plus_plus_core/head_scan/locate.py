@@ -92,6 +92,7 @@ class Shot:
     tilt_deg: float
     stamp_s: float
     n_blobs: int
+    init_xy: tuple[float, float] | None = None  # 첫 색 덩어리의 광선-평면 교점(진단용)
 
 
 @dataclass(frozen=True)
@@ -178,7 +179,7 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
             stage("moving", pan, tilt)
             reading = head.move(pan, tilt)
             t_bc = head_fk.t_base_cam(reading.pan_deg, reading.tilt_deg, extrinsics_yaml)
-            blobs, stamp = 0, 0.0
+            blobs, stamp, first_init = 0, 0.0, None
             stage("shooting", reading.pan_deg, reading.tilt_deg)
             for frame in camera.capture(request.n_frames):
                 stamp = frame.stamp_s
@@ -186,8 +187,9 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
                 if init is None:
                     continue
                 blobs += 1
+                first_init = first_init or init
                 observations.append(standing_pose.StandingObs(frame.rgb, frame.k, reading.pan_deg, reading.tilt_deg, init))
-            shots.append(Shot(reading.pan_deg, reading.tilt_deg, stamp, blobs))
+            shots.append(Shot(reading.pan_deg, reading.tilt_deg, stamp, blobs, first_init))
             if not blobs:
                 continue
             stage("fitting", reading.pan_deg, reading.tilt_deg)

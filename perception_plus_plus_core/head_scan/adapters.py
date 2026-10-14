@@ -73,8 +73,9 @@ class Sim2RealHead:
 class SshCamera:
     """vision 호스트에서 컬러 영상을 한 장씩 받는다. 목 정지 직후 `settle_s` 만큼 기다린 뒤 찍는다(RGB 는 롤링 셔터)."""
 
-    def __init__(self, host: str = "vision-3090", settle_s: float = 1.0):
-        self.host, self.settle_s = host, settle_s
+    def __init__(self, host: str = "vision-3090", settle_s: float = 1.0, save_dir: Path | None = None):
+        self.host, self.settle_s, self.save_dir = host, settle_s, save_dir
+        self._count = 0
 
     def capture(self, n_frames: int = 1) -> list[locate.Frame]:
         time.sleep(self.settle_s)
@@ -87,6 +88,10 @@ class SshCamera:
                        f"python3 scripts/save_color_frame.py --out {remote}"], timeout=60)
             if cap.returncode != 0 or run(["scp", "-q", f"{self.host}:{remote}", str(local)]).returncode != 0:
                 raise RuntimeError(f"영상을 못 받았다: {cap.stderr[-200:]}")
+            if self.save_dir is not None:  # 진단용 사본(찍은 순서대로 번호)
+                self.save_dir.mkdir(parents=True, exist_ok=True)
+                (self.save_dir / f"frame_{self._count:02d}.npz").write_bytes(local.read_bytes())
+                self._count += 1
             data = np.load(local)
             frames.append(locate.Frame(rgb=data["rgb"], k=data["K"], stamp_s=float(data["stamp_s"])))
             local.unlink(missing_ok=True)

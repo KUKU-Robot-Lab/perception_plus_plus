@@ -59,6 +59,7 @@ def main() -> int:
     ap.add_argument("--frames", type=int, default=1, help="자세당 촬영 장수")
     ap.add_argument("--sim2real", type=Path, default=adapters.SIM2REAL)
     ap.add_argument("--vision-host", default="vision-3090")
+    ap.add_argument("--save-dir", type=Path, default=None, help="찍은 영상을 이 폴더에 frame_NN.npz 로 남긴다(진단용)")
     ap.add_argument("--start-perception", action="store_true")
     ap.add_argument("--fake", metavar="X,Y", help="로봇 없이 가짜 목·카메라로 돌린다(물체가 (X,Y) 에 있다고 치고 렌더). 목은 안 움직인다")
     ap.add_argument("--dry-run", action="store_true")
@@ -85,12 +86,12 @@ def main() -> int:
         return 2
     launcher = start_perception(args.sim2real, args.vision_host, [spec.name]) if args.start_perception else None
     try:
-        result = locate.locate_object(request, spec, adapters.Sim2RealHead(args.sim2real), adapters.SshCamera(args.vision_host))
+        result = locate.locate_object(request, spec, adapters.Sim2RealHead(args.sim2real), adapters.SshCamera(args.vision_host, save_dir=args.save_dir))
     finally:
         if launcher:
             launcher.terminate()
     for shot in result.shots:
-        print(f"  촬영 pan {shot.pan_deg:+.3f} tilt {shot.tilt_deg:+.3f} 영상 {shot.stamp_s:.3f} 색 덩어리 {shot.n_blobs}")
+        print(f"  촬영 pan {shot.pan_deg:+.3f} tilt {shot.tilt_deg:+.3f} 영상 {shot.stamp_s:.3f} 색 덩어리 {shot.n_blobs}" + (f" · 시작점 ({shot.init_xy[0]:.3f}, {shot.init_xy[1]:.3f})" if shot.init_xy else ""))
     print(f"기준 자세 복귀: {'✓' if result.home_ok else '❌ 확인 필요'}")
     if not result.found:
         print(f"못 찾음: {result.reason}")
