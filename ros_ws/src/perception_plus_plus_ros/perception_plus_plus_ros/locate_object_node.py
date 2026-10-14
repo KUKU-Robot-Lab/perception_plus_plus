@@ -34,9 +34,12 @@ class LocateObjectServer(Node):
         self.declare_parameter("sim2real", str(adapters.SIM2REAL))
         self.declare_parameter("vision_host", "vision-3090")
         self.declare_parameter("action_name", "locate_object")
+        self.declare_parameter("extrinsics", "")  # 비우면 저장소 기본 hand-eye. 후보 yaml 경로를 주면 그 값으로 계산한다
         sim2real = Path(self.get_parameter("sim2real").value)
         self._head = head or adapters.Sim2RealHead(sim2real)
         self._camera = camera or adapters.SshCamera(self.get_parameter("vision_host").value)
+        extrinsics = str(self.get_parameter("extrinsics").value)
+        self._extrinsics = {"extrinsics_yaml": Path(extrinsics)} if extrinsics else {}
         self._lock = threading.Lock()
         self._server = ActionServer(self, LocateObject, self.get_parameter("action_name").value, execute_callback=self._execute,
                                     goal_callback=self._on_goal, cancel_callback=lambda _: CancelResponse.ACCEPT,
@@ -79,7 +82,7 @@ class LocateObjectServer(Node):
                 goal_handle.publish_feedback(feedback)
 
             outcome = locate.locate_object(request, spec, self._head, self._camera, on_stage=on_stage,
-                                           should_stop=lambda: goal_handle.is_cancel_requested)
+                                           should_stop=lambda: goal_handle.is_cancel_requested, **self._extrinsics)
         self._fill(result, outcome)
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()
