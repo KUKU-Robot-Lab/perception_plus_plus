@@ -69,6 +69,56 @@ def ref_records(surveys, ref_pan: float, ref_tilt: float, tol: float = 1.0):
                 yield d, r, rf
 
 
+def compute_anchor(profile, profile_path, surveys, ref_pan: float = 0.0, ref_tilt: float = -20.0, log=print):
+    """기준 자세 영상에서 프로필 출력을 기존 검증 좌표계에 붙이는 앵커를 구한다 → (FrameAnchor, 통계 dict).
+
+    profile_path 는 디스크에 저장된 (앵커 없는) 프로필 경로(z 비교에 노드와 같은 변환을 쓰려고). surveys 에 기준 자세 프레임이 있어야 한다.
+    FP++ 관측이 하나도 없으면 dz 는 0 으로 두고 경고한다.
+    """
+    hand_eye = Path("/tmp") / f"anchor_hand_eye_{profile.name}.yaml"
+    cpm.write_extrinsics_yaml(profile, hand_eye)
+    t_static, holes = static_camera(), B.T.cad_holes()
+    src, dst, n_frames = [], [], 0
+    for d, r, _ in ref_records(surveys, ref_pan, ref_tilt):
+        z = np.load(d / r["frame"])
+        pan, tilt = r["measured"]
+        img, _ = B.detect(cv2.cvtColor(z["rgb"], cv2.COLOR_RGB2GRAY), z["K"], head_fk.t_base_cam(pan, tilt, hand_eye), holes)
+        if len(img) < 5:
+            continue
+        det = refit.Detection(pan, tilt, "bolt", np.arange(len(img)), img, z["K"])
+        src.append(refit._ground_xy(det, refit.Params(), Z, hand_eye) + cpm.bias_for(profile, pan, tilt)[:2])
+        dst.append(plane_xy(t_static, z["K"], img, Z))
+        n_frames += 1
+    if not src:
+        raise RuntimeError(f"기준 자세(pan {ref_pan}, tilt {ref_tilt}) 영상에서 볼트 5개 이상이 잡힌 프레임이 없다 — 앵커를 못 구한다")
+    src, dst = np.vstack(src), np.vstack(dst)
+    rot, trans = rigid_fit(src, dst)
+    fit_resid = np.linalg.norm(src @ np.array([[np.cos(rot), np.sin(rot)], [-np.sin(rot), np.cos(rot)]]) + trans - dst, axis=1)
+    log(f"기준 자세 영상 {n_frames}장, 볼트 점 {len(src)}개: 프로필 → 기존 정적 좌표계 강체 맞춤 회전 {np.degrees(rot):+.3f}° 이동 ({1000 * trans[0]:+.2f}, {1000 * trans[1]:+.2f}) mm "
+        f"· 맞춤 잔차 평균 {1000 * fit_resid.mean():.2f} mm (맞추기 전 평균 차이 {1000 * np.linalg.norm(src - dst, axis=1).mean():.2f} mm)")
+
+    # z: 같은 FP++ 관측의 기존 변환 대 프로필 변환
+    reg = load_registry(DEFAULT_REGISTRY)
+    names = ("source240b_blue", "shaker_c_orange")
+    old, new = PoseConverter(reg, list(names)), PoseConverter(reg, list(names), calib_profile=profile_path)
+    zs = []
+    for _, r, rf in ref_records(surveys, ref_pan, ref_tilt):
+        for n in names:
+            raw = rf["raw_cam"].get(n)
+            if raw:
+                pos, quat = np.array(raw["pos"]), np.array(raw["quat_wxyz"])
+                zs.append(old.convert(n, pos, quat)[0][2] - new.convert(n, pos, quat, tuple(r["measured"]))[0][2])
+    if zs:
+        dz = float(np.mean(zs))
+        log(f"z: FP++ 관측 {len(zs)}개, 기존 − 프로필 평균 {1000 * dz:+.2f} mm (표준편차 {1000 * np.std(zs):.2f})")
+    else:
+        dz = 0.0
+        log("⚠ 기준 자세에서 FP++ 관측이 없어 dz 를 0 으로 둔다(known z 를 쓰면 영향이 작다)")
+    anchor = cpm.FrameAnchor(float(np.degrees(rot)), (float(trans[0]), float(trans[1])), dz,
+                             f"기존 정적 camera 블록 기준 자세(pan {ref_pan}/tilt {ref_tilt}), 볼트 {len(src)}점")
+    return anchor, {"n_frames": n_frames, "n_bolts": len(src), "fit_resid_mm": float(1000 * fit_resid.mean()), "n_z_obs": len(zs)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--profile", required=True)
@@ -80,44 +130,8 @@ def main() -> int:
     ap.add_argument("--ref-tilt", type=float, default=-20.0)
     args = ap.parse_args()
     profile = cpm.load_profile(args.profile)
-    hand_eye = Path("/tmp") / f"anchor_hand_eye_{args.name}.yaml"
-    cpm.write_extrinsics_yaml(profile, hand_eye)
-    t_static, holes = static_camera(), B.T.cad_holes()
-
-    src, dst, n_frames = [], [], 0
-    for d, r, _ in ref_records(args.surveys, args.ref_pan, args.ref_tilt):
-        z = np.load(d / r["frame"])
-        pan, tilt = r["measured"]
-        img, _ = B.detect(cv2.cvtColor(z["rgb"], cv2.COLOR_RGB2GRAY), z["K"], head_fk.t_base_cam(pan, tilt, hand_eye), holes)
-        if len(img) < 5:
-            continue
-        det = refit.Detection(pan, tilt, "bolt", np.arange(len(img)), img, z["K"])
-        src.append(refit._ground_xy(det, refit.Params(), Z, hand_eye) + cpm.bias_for(profile, pan, tilt)[:2])
-        dst.append(plane_xy(t_static, z["K"], img, Z))
-        n_frames += 1
-    src, dst = np.vstack(src), np.vstack(dst)
-    rot, trans = rigid_fit(src, dst)
-    fit_resid = np.linalg.norm(src @ np.array([[np.cos(rot), np.sin(rot)], [-np.sin(rot), np.cos(rot)]]) + trans - dst, axis=1)
-    print(f"기준 자세 영상 {n_frames}장, 볼트 점 {len(src)}개: 프로필 → 기존 정적 좌표계 강체 맞춤 회전 {np.degrees(rot):+.3f}° 이동 ({1000 * trans[0]:+.2f}, {1000 * trans[1]:+.2f}) mm "
-          f"· 맞춤 잔차 평균 {1000 * fit_resid.mean():.2f} mm (맞추기 전 평균 차이 {1000 * np.linalg.norm(src - dst, axis=1).mean():.2f} mm)")
-
-    # z: 같은 FP++ 관측의 기존 변환 대 프로필 변환
-    reg = load_registry(DEFAULT_REGISTRY)
-    names = ("source240b_blue", "shaker_c_orange")
-    old, new = PoseConverter(reg, list(names)), PoseConverter(reg, list(names), calib_profile=args.profile)
-    zs = []
-    for _, r, rf in ref_records(args.surveys, args.ref_pan, args.ref_tilt):
-        for n in names:
-            raw = rf["raw_cam"].get(n)
-            if raw:
-                pos, quat = np.array(raw["pos"]), np.array(raw["quat_wxyz"])
-                zs.append(old.convert(n, pos, quat)[0][2] - new.convert(n, pos, quat, tuple(r["measured"]))[0][2])
-    dz = float(np.mean(zs))
-    print(f"z: FP++ 관측 {len(zs)}개, 기존 − 프로필 평균 {1000 * dz:+.2f} mm (표준편차 {1000 * np.std(zs):.2f})")
-
-    anchored = dataclasses.replace(profile, name=args.name, anchor=cpm.FrameAnchor(float(np.degrees(rot)), (float(trans[0]), float(trans[1])), dz,
-                                   f"기존 정적 camera 블록 기준 자세(pan {args.ref_pan}/tilt {args.ref_tilt}), 볼트 {len(src)}점"),
-                                   notes=profile.notes + " + 기존 FP++ 좌표계 앵커" + (" + 아는 z" if args.known_z else ""),
+    anchor, _ = compute_anchor(profile, args.profile, args.surveys, args.ref_pan, args.ref_tilt)
+    anchored = dataclasses.replace(profile, name=args.name, anchor=anchor, notes=profile.notes + " + 기존 FP++ 좌표계 앵커" + (" + 아는 z" if args.known_z else ""),
                                    known_z=cpm.KnownZ(args.known_z, 0.015) if args.known_z else None)
     out = cpm.PROFILE_DIR / f"{args.name}.yaml"
     if out.exists():
