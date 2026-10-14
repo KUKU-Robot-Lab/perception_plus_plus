@@ -133,17 +133,27 @@ def _spread(observations: list[PoseObs], common: list[int], z: float) -> tuple[f
     return float(np.sqrt(np.mean(sq))), np.array(offsets)
 
 
-def grid_scale(obs: PoseObs, z: float) -> tuple[float, float]:
-    """한 자세의 코너를 z 평면에 얹은 뒤 규격 격자에 닮음변환(회전·이동·배율)으로 맞춘다 → (배율, 잔차 RMS m). 배율 1.000 이 정상."""
-    xy = _plane_xy(obs, z)
-    ids = obs.ids.astype(int)
-    col, row = ids % (SX - 1), ids // (SX - 1)
-    nominal = np.column_stack([(row + 1) * SQUARE, (col + 1) * SQUARE])
+def _similarity_fit(xy: np.ndarray, nominal: np.ndarray) -> tuple[float, float]:
+    """nominal → xy 닮음변환(회전·이동·배율, 반사 없음)의 (배율, 잔차 RMS)."""
     mu_a, mu_b = xy.mean(axis=0), nominal.mean(axis=0)
     a, b = xy - mu_a, nominal - mu_b
-    u, sig, vt = np.linalg.svd(b.T @ a / len(a))
+    u, sig, vt = np.linalg.svd(a.T @ b / len(a))  # 목표 x 원천 공분산(Umeyama)
     d = np.diag([1.0, np.sign(np.linalg.det(u @ vt))])
     rot = u @ d @ vt
     scale = float(np.trace(np.diag(sig) @ d) / np.mean(np.sum(b ** 2, axis=1)))
     fitted = (rot @ b.T).T * scale + mu_a
-    return 1.0 / scale if scale else float("nan"), float(np.sqrt(np.mean(np.sum((fitted - xy) ** 2, axis=1))))
+    return scale, float(np.sqrt(np.mean(np.sum((fitted - xy) ** 2, axis=1))))
+
+
+def grid_scale(obs: PoseObs, z: float) -> tuple[float, float]:
+    """한 자세의 코너를 z 평면에 얹은 뒤 규격 격자(30 mm)에 닮음변환으로 맞춘다 → (xy 길이 / 규격 길이 배율, 잔차 RMS m). 배율 1.000 이 정상.
+
+    보드 좌표계는 위에서 본 base 평면과 거울상일 수 있어(z 방향) 반사 유무 두 경우 중 잔차가 작은 쪽을 쓴다.
+    """
+    xy = _plane_xy(obs, z)
+    ids = obs.ids.astype(int)
+    col, row = ids % (SX - 1), ids // (SX - 1)
+    nominal = np.column_stack([(col + 1) * SQUARE, (row + 1) * SQUARE])  # 보드 좌표: x 가 열, y 가 행(OpenCV 코너 번호는 행 우선)
+    fits = [_similarity_fit(xy, nominal), _similarity_fit(xy, nominal * np.array([1.0, -1.0]))]
+    scale, resid = min(fits, key=lambda f: f[1])
+    return scale, resid

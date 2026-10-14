@@ -11,7 +11,8 @@ ORIGIN = np.array([0.345, -0.155])  # 보드 첫 코너(base xy)
 def _corner_xy(ids):
     ids = np.asarray(ids)
     col, row = ids % (bc.SX - 1), ids // (bc.SX - 1)
-    return ORIGIN + np.column_stack([(row + 1) * bc.SQUARE, (col + 1) * bc.SQUARE])  # 보드 x 축이 base y, y 축이 base x 에 가깝다는 가정은 필요 없다
+    # 실제 배치(sim2real recompute_from_cad): 보드 x(열)가 base +y, 보드 y(행)가 base -x. 반사는 없다.
+    return np.column_stack([ORIGIN[0] + 0.150 - (row + 1) * bc.SQUARE, ORIGIN[1] + (col + 1) * bc.SQUARE])
 
 
 def _project(t_base_cam, xy, z):
