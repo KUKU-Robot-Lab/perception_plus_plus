@@ -58,3 +58,15 @@ def test_grid_scale_is_one_for_a_correct_pose_and_flags_scale_error():
     assert scale == pytest.approx(1.0, abs=1e-3) and rms < 1e-4
     scale_wrong, _ = bc.grid_scale(obs, BOARD_Z + 0.03)  # 높이를 3 cm 틀리게 가정하면 배율이 어긋난다
     assert abs(scale_wrong - 1.0) > 0.01
+
+
+def test_cluster_markers_separates_two_identical_boards():
+    board_a = [(100 + 40 * i, 200 + 40 * j) for i in range(5) for j in range(3)]
+    board_b = [(520 + 40 * i, 40 + 40 * j) for i in range(2) for j in range(2)]
+    labels = bc.cluster_markers(np.array(board_a + board_b, dtype=float), link_px=70.0)
+    assert len(set(labels[:15])) == 1 and len(set(labels[15:])) == 1 and labels[0] != labels[-1]
+
+
+def test_cluster_markers_single_board_is_one_cluster():
+    pts = np.array([(100 + 35 * i, 100 + 35 * j) for i in range(4) for j in range(4)], dtype=float)
+    assert len(set(bc.cluster_markers(pts, link_px=70.0))) == 1

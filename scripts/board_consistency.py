@@ -22,26 +22,47 @@ CANDIDATES = {
 }
 
 
-def load_detections(folder: Path, min_corners: int) -> list[dict]:
-    """자세마다 프레임들의 코너 픽셀을 id 별로 평균한다. 코너가 min_corners 미만이면 그 자세는 뺀다."""
+#: 같은 보드가 둘이다(2026-10-14). 마커 id 가 겹치므로 영상 속 덩어리를 대략적인 base y 로 가른다: 가운데 보드 A, -y 모서리 보드 B.
+BOARD_B_MAX_Y = -0.20
+ROUGH_Z = 0.200
+B_ID_OFFSET = 100
+
+
+def rough_board_label(t_base_cam: np.ndarray, k: np.ndarray, uv: np.ndarray) -> str:
+    """덩어리 중심 픽셀을 z=보드 높이 평면에 얹은 base y 로 A/B 를 가른다(코너 id 구분용이라 대략이면 된다)."""
+    obs = bc.PoseObs(t_base_cam, k, np.array([0]), uv.mean(axis=0, keepdims=True))
+    return "B" if bc._plane_xy(obs, ROUGH_Z)[0, 1] < BOARD_B_MAX_Y else "A"
+
+
+def load_detections(folder: Path, min_corners: int, label_yaml: Path) -> list[dict]:
+    """자세마다 프레임들의 코너 픽셀을 (보드, id) 별로 평균한다. 코너가 min_corners 미만인 보드는 그 자세에서 뺀다."""
     out = []
     for rec in json.loads((folder / "poses.json").read_text(encoding="utf-8"))["records"]:
-        acc: dict[int, list[np.ndarray]] = {}
+        acc: dict[tuple[str, int], list[np.ndarray]] = {}
         k_mat = None
+        t_label = head_fk.t_base_cam(*rec["measured"], label_yaml)
         for k in range(rec["frames"]):
             data = np.load(folder / f"pose_{rec['index']}_{k}.npz")
             k_mat = data["K"]
-            found = bc.detect_corners(data["rgb"])
-            if found:
-                for i, uv in zip(*found):
-                    acc.setdefault(int(i), []).append(uv)
-        ids = np.array(sorted(acc))
-        if len(ids) < min_corners:
-            print(f"  자세 {rec['index']} {rec['commanded']}: 코너 {len(ids)}개 — 제외")
-            continue
-        out.append({"rec": rec, "k": k_mat, "ids": ids, "uv": np.array([np.mean(acc[int(i)], axis=0) for i in ids])})
-        print(f"  자세 {rec['index']} {rec['commanded']} 실측 {rec['measured']}: 코너 {len(ids)}개")
+            for ids, uv in bc.detect_boards(data["rgb"], min_corners=4):
+                label = rough_board_label(t_label, k_mat, uv)
+                for i, point in zip(ids, uv):
+                    acc.setdefault((label, int(i)), []).append(point)
+        for label in ("A", "B"):
+            keys = sorted(key for key in acc if key[0] == label)
+            if len(keys) < min_corners:
+                if keys:
+                    print(f"  자세 {rec['index']} {rec['commanded']} 보드 {label}: 코너 {len(keys)}개 — 제외")
+                continue
+            out.append({"rec": rec, "k": k_mat, "board": label, "ids": np.array([i for _, i in keys]),
+                        "uv": np.array([np.mean(acc[key], axis=0) for key in keys])})
+            print(f"  자세 {rec['index']} {rec['commanded']} 실측 {rec['measured']} 보드 {label}: 코너 {len(keys)}개")
     return out
+
+
+def pose_obs(det: dict, yaml_path: Path, offset_b: bool = True) -> "bc.PoseObs":
+    ids = det["ids"] + (B_ID_OFFSET if offset_b and det["board"] == "B" else 0)
+    return bc.PoseObs(head_fk.t_base_cam(*det["rec"]["measured"], yaml_path), det["k"], ids, det["uv"])
 
 
 def main() -> int:
@@ -51,19 +72,23 @@ def main() -> int:
     ap.add_argument("--min-corners", type=int, default=6)
     args = ap.parse_args()
     cands = {p.stem: p for p in args.extrinsics} if args.extrinsics else {k: v for k, v in CANDIDATES.items() if v.exists()}
-    dets = load_detections(args.folder, args.min_corners)
-    if len(dets) < 2:
+    dets = load_detections(args.folder, args.min_corners, next(iter(cands.values())))
+    if len({d["rec"]["index"] for d in dets}) < 2:
         print("❌ 코너가 충분한 자세가 2개 미만", file=sys.stderr)
         return 1
     for name, yaml_path in cands.items():
-        obs = [bc.PoseObs(head_fk.t_base_cam(*d["rec"]["measured"], yaml_path), d["k"], d["ids"], d["uv"]) for d in dets]
-        report = bc.consistency(obs)
-        at = {z: report.rms_by_z[round(z, 4)] for z in (0.200, 0.205)}
-        print(f"== {name}: 공통 코너 {report.n_common} · 자세 간 RMS 최소 {1000 * report.rms_at_best_m:.2f} mm (보드 높이 {report.best_z:.4f}) · "
-              f"z 0.200 → {1000 * at[0.200]:.2f} mm · z 0.205 → {1000 * at[0.205]:.2f} mm")
-        for d, off in zip(dets, report.pose_offset_m):
-            scale, resid = bc.grid_scale(bc.PoseObs(head_fk.t_base_cam(*d["rec"]["measured"], yaml_path), d["k"], d["ids"], d["uv"]), report.best_z)
-            print(f"   자세 {d['rec']['commanded']}: 합의 대비 오프셋 ({1000 * off[0]:+.2f}, {1000 * off[1]:+.2f}) mm · 격자 배율 {scale:.4f} · 격자 잔차 {1000 * resid:.2f} mm")
+        print(f"== {name}")
+        for scope, subset in (("전체", dets), ("보드 A", [d for d in dets if d["board"] == "A"]), ("보드 B", [d for d in dets if d["board"] == "B"])):
+            if len({d["rec"]["index"] for d in subset}) < 2:
+                print(f"   {scope}: 자세 2개 미만 — 건너뜀")
+                continue
+            report = bc.consistency([pose_obs(d, yaml_path) for d in subset])
+            at = {z: report.rms_by_z[round(z, 4)] for z in (0.200, 0.205)}
+            print(f"   {scope}: 공통 코너 {report.n_common} · 자세 간 RMS 최소 {1000 * report.rms_at_best_m:.2f} mm (보드 높이 {report.best_z:.4f}) · "
+                  f"z 0.200 → {1000 * at[0.200]:.2f} mm · z 0.205 → {1000 * at[0.205]:.2f} mm")
+        for d in dets:
+            scale, resid = bc.grid_scale(pose_obs(d, yaml_path, offset_b=False), 0.200)
+            print(f"   자세 {d['rec']['commanded']} 보드 {d['board']}: 격자 배율 {scale:.4f} · 잔차 {1000 * resid:.2f} mm")
     return 0
 
 

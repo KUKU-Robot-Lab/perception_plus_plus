@@ -51,6 +51,46 @@ def detect_corners(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
     return charuco_ids.ravel().astype(int), charuco.reshape(-1, 2).astype(float)
 
 
+def cluster_markers(centers: np.ndarray, link_px: float) -> np.ndarray:
+    """마커 중심(N x 2)을 link_px 이내로 이어진 덩어리끼리 묶어 덩어리 번호(N)를 돌려준다(같은 보드가 둘일 때 구분용)."""
+    labels = -np.ones(len(centers), dtype=int)
+    next_label = 0
+    for start in range(len(centers)):
+        if labels[start] >= 0:
+            continue
+        labels[start] = next_label
+        stack = [start]
+        while stack:
+            i = stack.pop()
+            near = np.where((labels < 0) & (np.linalg.norm(centers - centers[i], axis=1) <= link_px))[0]
+            labels[near] = next_label
+            stack.extend(near.tolist())
+        next_label += 1
+    return labels
+
+
+def detect_boards(rgb: np.ndarray, min_corners: int = 4) -> list[tuple[np.ndarray, np.ndarray]]:
+    """같은 규격 보드가 여러 장(마커 id 가 겹친다)일 때 보드별 (ids, uv). 마커를 위치로 묶은 뒤 덩어리마다 코너를 보간한다."""
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+    board = cv2.aruco.CharucoBoard_create(SX, SY, SQUARE, MARKER, dictionary)
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    corners, ids, _ = cv2.aruco.detectMarkers(gray, dictionary)
+    if ids is None or len(ids) < 2:
+        return []
+    centers = np.array([c.reshape(-1, 2).mean(axis=0) for c in corners])
+    side = float(np.median([np.linalg.norm(c.reshape(-1, 2)[0] - c.reshape(-1, 2)[1]) for c in corners]))
+    labels = cluster_markers(centers, link_px=side * (SQUARE / MARKER) * 2.2)
+    found = []
+    for label in sorted(set(labels.tolist())):
+        sel = np.where(labels == label)[0]
+        if len(sel) < 2:
+            continue
+        count, charuco, charuco_ids = cv2.aruco.interpolateCornersCharuco([corners[i] for i in sel], ids[sel], gray, board)
+        if charuco is not None and count >= min_corners:
+            found.append((charuco_ids.ravel().astype(int), charuco.reshape(-1, 2).astype(float)))
+    return found
+
+
 def _plane_xy(obs: PoseObs, z: float) -> np.ndarray:
     ray_cam = np.column_stack([(obs.uv[:, 0] - obs.k[0, 2]) / obs.k[0, 0], (obs.uv[:, 1] - obs.k[1, 2]) / obs.k[1, 1], np.ones(len(obs.uv))])
     ray = ray_cam @ obs.t_base_cam[:3, :3].T
