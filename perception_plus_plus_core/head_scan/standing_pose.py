@@ -49,22 +49,34 @@ def estimate_standing(observations: list[StandingObs], vertices_body: np.ndarray
                       origin_above_bottom: float, hue: float, extrinsics_yaml: Path | str = head_fk.EXTRINSICS_YAML,
                       min_iou: float = DEFAULT_MIN_IOU, reject_m: float = DEFAULT_REJECT_M,
                       base_z: float = TABLE_TOP_Z,
-                      occluder: tuple[np.ndarray, np.ndarray, float] | None = None) -> StandingEstimate | None:
+                      occluder: tuple[np.ndarray, np.ndarray, float] | None = None,
+                      cache: dict | None = None) -> StandingEstimate | None:
     """관측들에서 (x, y) 를 구한다. 쓸 만한 관측이 없으면 None(값을 만들어 내지 않는다).
 
     base_z 는 물체 바닥이 닿는 높이(기본 상판, 홀더 안이면 홀더 안쪽 바닥), occluder 는 `silhouette_fit.fit_xy` 참고.
+    cache 를 주면 관측별 맞춤 결과를 id(관측) 로 기억해 같은 관측을 다시 맞추지 않는다(관측을 하나씩 늘려 가며 부를 때 시간이
+    선형으로 늘어나는 것을 막는다). 같은 호출 묶음에서 관측 객체·다른 인자가 바뀌지 않을 때만 쓴다.
     """
     z_origin = base_z + origin_above_bottom
     fits = []
     for obs in observations:
+        if cache is not None and id(obs) in cache:
+            fit = cache[id(obs)]
+            if fit is not None:
+                fits.append(fit)
+            continue
         t_bc = head_fk.t_base_cam(obs.pan_deg, obs.tilt_deg, extrinsics_yaml)
         uv, _ = silhouette_fit.project_points(np.array([[obs.xy_init[0], obs.xy_init[1], z_origin]]), t_bc, obs.k)
         mask = silhouette_fit.largest_blob_near(silhouette_fit.hue_mask(obs.rgb, hue), tuple(uv[0]))
-        if mask.sum() < MIN_MASK_PX:
-            continue
-        fit = silhouette_fit.fit_xy(vertices_body, faces, z_origin, t_bc, obs.k, mask, obs.xy_init, occluder=occluder)
-        if fit.iou >= min_iou:
-            fits.append(silhouette_fit.FitResult(x=fit.x + obs.bias_xy[0], y=fit.y + obs.bias_xy[1], iou=fit.iou, init_iou=fit.init_iou))
+        result = None
+        if mask.sum() >= MIN_MASK_PX:
+            fit = silhouette_fit.fit_xy(vertices_body, faces, z_origin, t_bc, obs.k, mask, obs.xy_init, occluder=occluder)
+            if fit.iou >= min_iou:
+                result = silhouette_fit.FitResult(x=fit.x + obs.bias_xy[0], y=fit.y + obs.bias_xy[1], iou=fit.iou, init_iou=fit.init_iou)
+        if cache is not None:
+            cache[id(obs)] = result
+        if result is not None:
+            fits.append(result)
     if not fits:
         return None
     xy = np.array([[f.x, f.y] for f in fits])

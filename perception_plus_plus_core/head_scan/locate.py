@@ -222,6 +222,7 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
     survey.validate_poses(poses + [HOME_POSE])
     z_origin = table_z + spec.origin_above_bottom
     observations: list[standing_pose.StandingObs] = []
+    fit_cache: dict = {}  # 관측마다 한 번만 맞춘다(자세가 늘 때마다 앞 관측을 다시 맞추면 시간이 선형으로 는다)
     shots: list[Shot] = []
     estimate = None
     reason = ""
@@ -256,7 +257,7 @@ def locate_object(request: LocateRequest, spec: ObjectSpec, head: HeadPort, came
                 continue
             stage("fitting", reading.pan_deg, reading.tilt_deg)
             estimate = standing_pose.estimate_standing(observations, spec.vertices, spec.faces, spec.origin_above_bottom, spec.hue,
-                                                       extrinsics_yaml, base_z=table_z)
+                                                       extrinsics_yaml, base_z=table_z, cache=fit_cache)
             if estimate and estimate.n_used >= request.min_used and estimate.spread_m <= request.spread_tol_m:
                 break
     except Exception as exc:  # noqa: BLE001 - 어떤 실패든 복귀를 막지 않고 이유를 결과에 남긴다

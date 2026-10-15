@@ -73,9 +73,10 @@ def render_silhouette(vertices: np.ndarray, faces: np.ndarray, t_base_cam: np.nd
     """base 좌표 메시(꼭짓점, 삼각형)의 실루엣을 shape=(높이, 너비) 불리언 영상으로 그린다."""
     uv, z = project_points(vertices, t_base_cam, k)
     canvas = np.zeros(shape, dtype=np.uint8)
-    for tri in faces:
-        if np.all(z[tri] > 1e-3):
-            cv2.fillConvexPoly(canvas, np.round(uv[tri]).astype(np.int32), 1)
+    # 삼각형마다 np.all 을 부르던 파이썬 루프가 렌더 시간의 대부분이었다 — 가시 삼각형을 한 번에 거르고 그리기만 반복한다.
+    visible = (z[faces] > 1e-3).all(axis=1)
+    for tri_uv in np.round(uv[faces[visible]]).astype(np.int32):
+        cv2.fillConvexPoly(canvas, tri_uv, 1)
     return canvas.astype(bool)
 
 

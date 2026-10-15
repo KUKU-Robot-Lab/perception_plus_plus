@@ -86,3 +86,24 @@ def test_estimate_standing_in_holder_uses_given_base_z_and_ignores_occluded_part
     assert est is not None and est.n_used == 3
     assert (est.x, est.y) == pytest.approx(truth, abs=2e-3)
     assert est.z == pytest.approx(CUP_BOTTOM_IN_HOLDER + ORIGIN_ABOVE_BOTTOM)
+
+
+def test_cache_does_not_refit_known_observations_and_gives_the_same_estimate(monkeypatch):
+    """관측을 하나씩 늘려 부를 때 앞 관측을 다시 맞추지 않고, 결과는 캐시 없이와 같다."""
+    truth = (0.22, 0.06)
+    verts, faces = _mesh()
+    observations = [_obs(p, truth) for p in (-30.0, 0.0, 30.0)]
+    calls = {"n": 0}
+    real = sf.fit_xy
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(sf, "fit_xy", counting)
+    cache: dict = {}
+    for n in (1, 2, 3):
+        est = sp.estimate_standing(observations[:n], verts, faces, ORIGIN_ABOVE_BOTTOM, _hue(), cache=cache)
+    assert calls["n"] == 3  # 1+1+1, 캐시가 없으면 1+2+3
+    plain = sp.estimate_standing(observations, verts, faces, ORIGIN_ABOVE_BOTTOM, _hue())
+    assert (est.x, est.y, est.n_used) == pytest.approx((plain.x, plain.y, plain.n_used))
