@@ -5,6 +5,7 @@ Saves a raw NPZ (rgb uint8 HxWx3, depth float32 metres HxW, K 3x3) plus a
 preview PNG so the cup framing can be confirmed before running the FP++ smoke.
 """
 import argparse
+from pathlib import Path
 
 import numpy as np
 import pyrealsense2 as rs
@@ -12,12 +13,14 @@ import pyrealsense2 as rs
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="/tmp/cup_raw.npz")
-    ap.add_argument("--preview", default="/tmp/cup_preview.png")
+    ap.add_argument("--out", default="logs/capture/cup_raw.npz")
+    ap.add_argument("--preview", default="logs/capture/cup_preview.png")
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--warmup", type=int, default=30, help="frames to settle AE")
     args = ap.parse_args()
+    for p in (args.out, args.preview):
+        Path(p).parent.mkdir(parents=True, exist_ok=True)
 
     pipeline = rs.pipeline()
     cfg = rs.config()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """vision-3090 에서 RealSense 컬러 영상 한 장 + 내부 파라미터를 npz 로 저장한다(읽기 전용).
 
-    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=126 python3 scripts/save_color_frame.py --out /tmp/frame.npz
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=126 python3 scripts/save_color_frame.py --out logs/capture/frame.npz
 
 카메라·FP++ 와 같은 localhost DDS 안에서 구독한다. 저장: rgb(uint8 HxWx3 RGB), K(3x3), stamp_s, frame_id.
 """

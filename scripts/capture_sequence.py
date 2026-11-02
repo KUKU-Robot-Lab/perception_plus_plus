@@ -5,6 +5,7 @@ Writes seq npz: rgb[N,H,W,3] uint8, depth[N,H,W] float32 m, K 3x3, mask0 HxW.
 Host-side (RealSense + modern ultralytics live in the .venv).
 """
 import argparse
+from pathlib import Path
 import numpy as np
 import pyrealsense2 as rs
 
@@ -47,13 +48,14 @@ def bbox_depth_mask(depth, xyxy, band=0.08, lo=0.1, hi=3.0):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="/tmp/ppp_io/cup_seq.npz")
+    ap.add_argument("--out", default="logs/capture/cup_seq.npz")
     ap.add_argument("--n", type=int, default=40)
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--warmup", type=int, default=30)
     ap.add_argument("--weights", default="models/yolo/yolo11n.pt")
     args = ap.parse_args()
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
 
     pipeline = rs.pipeline()
     cfg = rs.config()

@@ -88,8 +88,14 @@ def group_bias(frames: list[dict], neck_to_camera: np.ndarray, min_bolts: int = 
     return out
 
 
+def _work_yaml(name: str) -> Path:
+    d = HERE.parent / "logs/profile_yaml"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / name
+
+
 def _ground(det: refit.Detection, neck_to_camera: np.ndarray) -> np.ndarray:
-    path = Path("/tmp") / "calibrate_profile_hand_eye.yaml"
+    path = _work_yaml("calibrate_profile_hand_eye.yaml")
     path.write_text(_yaml_matrix(neck_to_camera), encoding="utf-8")
     head_fk.load_neck_to_camera.cache_clear()
     return refit._ground_xy(det, refit.Params(), Z, path)
@@ -112,7 +118,7 @@ def load_records(surveys: list[Path]) -> list[dict]:
 
 
 def detect_all(records: list[dict], neck_to_camera: np.ndarray, holes) -> list[dict]:
-    path = Path("/tmp") / "calibrate_profile_prior.yaml"
+    path = _work_yaml("calibrate_profile_prior.yaml")
     path.write_text(_yaml_matrix(neck_to_camera), encoding="utf-8")
     head_fk.load_neck_to_camera.cache_clear()
     frames = []
@@ -148,7 +154,7 @@ def fit_hand_eye(frames: list[dict], base: np.ndarray, start: np.ndarray) -> np.
     usable = [f for f in frames if len(f["img"]) >= MIN_BOLTS_FIT]
     if len(usable) < 4:
         raise RuntimeError(f"볼트가 {MIN_BOLTS_FIT}개 이상 잡힌 프레임이 {len(usable)}개뿐이다(4개 이상 필요)")
-    base_path = Path("/tmp") / "calibrate_profile_base.yaml"
+    base_path = _work_yaml("calibrate_profile_base.yaml")
     base_path.write_text(_yaml_matrix(base), encoding="utf-8")
     head_fk.load_neck_to_camera.cache_clear()
 
@@ -253,7 +259,7 @@ def main() -> int:
         log(f"3) pan {g['pan']:+7.2f} tilt {g['tilt']:+6.2f}: 볼트 {g['n_bolts']:3d}개 · 보정 ({1000 * g['bias'][0]:+.2f}, {1000 * g['bias'][1]:+.2f}) mm · 보정 후 잔차 {g['resid_mm']:.2f} mm")
     plain = cpm.CalibProfile(name=args.name, neck_to_camera=hand_eye, entries=entries, strict=True,
                              notes=f"calibrate_profile.py 로 한 번에 만듦. 서베이 {[s.name for s in surveys]}, tilt {args.tilt:+g} pan {args.pans}, 기준 hand-eye {args.base_hand_eye.name}")
-    plain_path = (run_dir if run_dir.exists() else Path("/tmp")) / f"{args.name}_plain.yaml"
+    plain_path = run_dir / f"{args.name}_plain.yaml"
     plain_path.parent.mkdir(parents=True, exist_ok=True)
     cpm.save_profile(plain, plain_path)
 

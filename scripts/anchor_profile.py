@@ -75,7 +75,8 @@ def compute_anchor(profile, profile_path, surveys, ref_pan: float = 0.0, ref_til
     profile_path 는 디스크에 저장된 (앵커 없는) 프로필 경로(z 비교에 노드와 같은 변환을 쓰려고). surveys 에 기준 자세 프레임이 있어야 한다.
     FP++ 관측이 하나도 없으면 dz 는 0 으로 두고 경고한다.
     """
-    hand_eye = Path("/tmp") / f"anchor_hand_eye_{profile.name}.yaml"
+    hand_eye = Path(__file__).resolve().parents[1] / "logs/profile_yaml" / f"anchor_hand_eye_{profile.name}.yaml"
+    hand_eye.parent.mkdir(parents=True, exist_ok=True)
     cpm.write_extrinsics_yaml(profile, hand_eye)
     t_static, holes = static_camera(), B.T.cad_holes()
     src, dst, n_frames = [], [], 0

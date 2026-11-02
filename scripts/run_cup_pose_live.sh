@@ -14,6 +14,8 @@
 set -e
 DOMAIN=126
 SIM=/home/usr/rl_ws/sim2real
+RELAY_DIR="$(cd "$(dirname "$0")/.." && pwd)/logs/relay"
+mkdir -p "$RELAY_DIR"
 
 # 1) FP++ 컨테이너 (baked). --ipc=host: FastDDS 공유메모리 데이터경로(없으면 discovery만·데이터0) / --network host: DDS 공유
 docker rm -f fpp_cup >/dev/null 2>&1 || true
@@ -26,7 +28,7 @@ docker run -d --name fpp_cup --network host --ipc=host --gpus all -e ROS_DOMAIN_
 echo "FP++ container up: $(docker ps -q -f name=fpp_cup)  (로그: docker logs -f fpp_cup)"
 
 # 2) relay: 카메라프레임 컵 6D pose → base 프레임 /cup_pose (detached, ssh 종료에도 유지)
-cat > /tmp/run_relay.sh <<SH
+cat > "$RELAY_DIR/run_relay.sh" <<SH
 #!/bin/bash
 source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=$DOMAIN
@@ -35,10 +37,10 @@ exec python3 cup_pose_relay.py --in-type posestamped \
   --in-topic /perception_plus_plus/cup/pose --out-topic /cup_pose \
   --extrinsics ../config/global_camera_extrinsics.yaml
 SH
-chmod +x /tmp/run_relay.sh
+chmod +x "$RELAY_DIR/run_relay.sh"
 pkill -f cup_pose_relay.py 2>/dev/null || true; sleep 1
-setsid /tmp/run_relay.sh </dev/null >/tmp/relay.log 2>&1 &
-echo "relay up (로그: tail -f /tmp/relay.log)"
+setsid "$RELAY_DIR/run_relay.sh" </dev/null >"$RELAY_DIR/relay.log" 2>&1 &
+echo "relay up (로그: tail -f $RELAY_DIR/relay.log)"
 echo "확인: ROS_DOMAIN_ID=$DOMAIN ros2 topic echo /cup_pose   (~8Hz, base 프레임 6D)"
 
 # 종료: docker rm -f fpp_cup ; pkill -f cup_pose_relay.py

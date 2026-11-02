@@ -13,6 +13,8 @@ set -e
 DOMAIN=126
 SIM=/home/usr/rl_ws/sim2real
 PPP=/home/usr/rl_ws/perception_plus_plus
+RELAY_DIR="$(cd "$(dirname "$0")/.." && pwd)/logs/relay"
+mkdir -p "$RELAY_DIR"
 
 # 1) cup 컨테이너 (기존과 동일 — baked 설정 그대로)
 docker rm -f fpp_cup >/dev/null 2>&1 || true
@@ -47,7 +49,7 @@ echo "fpp_shaker up"
 
 # 3) relay ×2 (detached)
 pkill -f cup_pose_relay.py 2>/dev/null || true; sleep 1
-cat > /tmp/run_relay_cup.sh <<SH
+cat > "$RELAY_DIR/run_relay_cup.sh" <<SH
 #!/bin/bash
 source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=$DOMAIN
@@ -56,7 +58,7 @@ exec python3 cup_pose_relay.py --in-type posestamped \
   --in-topic /perception_plus_plus/cup/pose --out-topic /cup_pose \
   --extrinsics ../config/global_camera_extrinsics.yaml
 SH
-cat > /tmp/run_relay_shaker.sh <<SH
+cat > "$RELAY_DIR/run_relay_shaker.sh" <<SH
 #!/bin/bash
 source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=$DOMAIN
@@ -65,9 +67,9 @@ exec python3 cup_pose_relay.py --in-type posestamped \
   --in-topic /perception_plus_plus/shaker/pose --out-topic /shaker_pose \
   --extrinsics ../config/global_camera_extrinsics_shaker.yaml
 SH
-chmod +x /tmp/run_relay_cup.sh /tmp/run_relay_shaker.sh
-setsid /tmp/run_relay_cup.sh </dev/null >/tmp/relay_cup.log 2>&1 &
-setsid /tmp/run_relay_shaker.sh </dev/null >/tmp/relay_shaker.log 2>&1 &
-echo "relay ×2 up (로그: /tmp/relay_cup.log /tmp/relay_shaker.log)"
+chmod +x "$RELAY_DIR/run_relay_cup.sh" "$RELAY_DIR/run_relay_shaker.sh"
+setsid "$RELAY_DIR/run_relay_cup.sh" </dev/null >"$RELAY_DIR/relay_cup.log" 2>&1 &
+setsid "$RELAY_DIR/run_relay_shaker.sh" </dev/null >"$RELAY_DIR/relay_shaker.log" 2>&1 &
+echo "relay ×2 up (로그: $RELAY_DIR/relay_cup.log $RELAY_DIR/relay_shaker.log)"
 echo "확인: ros2 topic echo /cup_pose · /shaker_pose"
 # 종료: docker rm -f fpp_cup fpp_shaker ; pkill -f cup_pose_relay.py

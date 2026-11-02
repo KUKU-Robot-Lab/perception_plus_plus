@@ -41,8 +41,8 @@ def main() -> int:
     checks.append(command_check("cpu_tests", ["bash", "scripts/run_tests.sh"]))
     checks.append(command_check("ros_colcon", [
         "colcon", "build", "--base-paths", "ros_ws/src",
-        "--build-base", "/tmp/ppp_readiness_build",
-        "--install-base", "/tmp/ppp_readiness_install"], required=True))
+        "--build-base", "build/readiness",
+        "--install-base", "install/readiness"], required=True))
     checks.append(command_check("cuda_torch", [
         "python3", "-c",
         "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name())"

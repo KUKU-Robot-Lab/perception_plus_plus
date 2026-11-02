@@ -31,7 +31,8 @@ def main():
     ap.add_argument("--survey", type=Path, required=True)
     args = ap.parse_args()
     profile = cpm.load_profile(args.profile)
-    hand_eye = Path("/tmp") / f"validate_{profile.name}.yaml"
+    hand_eye = Path(__file__).resolve().parents[2] / "logs/profile_yaml" / f"validate_{profile.name}.yaml"
+    hand_eye.parent.mkdir(parents=True, exist_ok=True)
     cpm.write_extrinsics_yaml(profile, hand_eye)
     recs = json.load(open(args.survey / "survey.json"))["records"]
     holes = B.T.cad_holes()
