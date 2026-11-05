@@ -7,6 +7,9 @@
     4. fit_board_pose       (코너 id, 손끝 위치) 쌍 → T_base_board (Kabsch) + 잔차
     5. compare_with_camera  카메라가 본 T_cam_board 와 비교 → extrinsics 오차 / 보정 후보
 
+실기 전에 press_calib.sim 으로 IK · 도달성 · 닫힌 루프 · 잡음 민감도를 먼저 확인한다:
+    python3 -m perception_plus_plus_core.press_calib.sim --board X Y Z YAW_DEG [--table-z Z] [--json out.json]
+
 상수 출처(두 저장소를 묶지 않으려고 복사만 함):
     보드   sim2real/scripts/charuco_calib.py  SX, SY, SQUARE, MARKER = 7, 5, 0.030, 0.022 · DICT_6X6_250 (origin 5846f88)
     링크   urdf/generated/rl/openarm_bi_rh56f1_rl.urdf  r_hl_index_tip · r_hj_index_2 mimic 1.1169 × r_hj_index_1

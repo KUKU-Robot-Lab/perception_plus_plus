@@ -24,6 +24,8 @@ class _Entry:
 
 OBJECTS = {
     "source240b_blue": _Entry("source240b.obj", 0.085, 100.0),
+    # 분홍은 파랑과 같은 메쉬(md5 805d7fb7…). 색은 sim2real config/objects.d/source240.yaml 의 hue_measured 164.
+    "source240_pink": _Entry("source240.obj", 0.085, 164.0),
     "shaker_c_orange": _Entry("shaker_c.obj", 0.065, 12.0),
 }
 #: 사람이 쓰는 이름 → 물체 이름
