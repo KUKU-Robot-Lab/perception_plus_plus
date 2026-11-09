@@ -100,7 +100,7 @@ def compute_anchor(profile, profile_path, surveys, ref_pan: float = 0.0, ref_til
 
     # z: 같은 FP++ 관측의 기존 변환 대 프로필 변환
     reg = load_registry(DEFAULT_REGISTRY)
-    names = ("source240b_blue", "shaker_c_orange")
+    names = ("source240_blue", "shaker_c_orange")
     old, new = PoseConverter(reg, list(names)), PoseConverter(reg, list(names), calib_profile=profile_path)
     zs = []
     for _, r, rf in ref_records(surveys, ref_pan, ref_tilt):

@@ -196,7 +196,7 @@ def resolve_mesh(params: dict, meta: dict, args) -> tuple[str, float]:
 
 def pick_params_file(params_dir: str, meta: dict) -> str | None:
     """에피소드마다 라이브 파라미터 파일을 고른다.
-    1) meta.object_real 첫 낱말(예: source240b_blue) == <params_dir>/<이름>.yaml
+    1) meta.object_real 첫 낱말(예: source240_blue) == <params_dir>/<이름>.yaml
     2) meta.fpp_mesh 의 파일 이름과 mesh_path 파일 이름이 같은 첫 파일(이름순)."""
     d = Path(params_dir)
     real = str(meta.get("object_real") or "").split("(")[0].split()[0:1]

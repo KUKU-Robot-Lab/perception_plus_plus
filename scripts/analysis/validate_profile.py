@@ -79,14 +79,14 @@ def main():
 
     print("== ③ FP++ (sim2real 노드와 같은 변환)")
     reg = load_registry(DEFAULT_REGISTRY)
-    names = ("source240b_blue", "shaker_c_orange")
+    names = ("source240_blue", "shaker_c_orange")
     conv = PoseConverter(reg, list(names), calib_profile=args.profile)
     for n in names:
         pts = []
         for r, rf in zip(recs, survey.drop_stale(recs)):
             raw = rf["raw_cam"].get(n)
             if not raw:
-                if n in r["raw_cam"]:
+                if n in {survey.OLD_NAMES.get(k, k) for k in r["raw_cam"]}:
                     print(f"  {n[:6]} pan {r['measured'][0]:+6.1f}: 낡은 값(이전 자세와 위치가 같다) — 제외")
                 continue
             try:

@@ -21,7 +21,7 @@ HOLDER_ORIGIN_Z = 0.235
 HOLDER_RING_RADIUS, HOLDER_RING_Z = 0.040, (-0.030, 0.030)
 HOLDER_CUP_FLOOR_Z = HOLDER_ORIGIN_Z - 0.025
 HOLDER_X = 0.380
-OBJECTS = {"source240b_blue": ("source240b.obj", 0.085, 100.0), "shaker_c_orange": ("shaker_c.obj", 0.065, 12.0)}
+OBJECTS = {"source240_blue": ("source240_blue.obj", 0.085, 100.0), "shaker_c_orange": ("shaker_c.obj", 0.065, 12.0)}
 
 
 def main() -> int:

@@ -2,7 +2,7 @@
 # /objects/<name>/pose 는 발행하지 않는다(그 토픽은 object_pose_node 하나가 낸다).
 
 # --- goal ---
-string object_name          # 물체 이름 또는 별칭(source240b_blue, blue_cup, shaker_c_orange, ...)
+string object_name          # 물체 이름 또는 별칭(source240_blue, blue_cup, shaker_c_orange, ...)
 string side                 # "right" | "left" | "" (로봇 기준 찾을 쪽, 비면 전체)
 float64[] prior_xy          # 사전 위치 [x, y] (base, m). 비우면 색 덩어리로 찾는다
 uint8 max_poses             # 0 이면 기본값

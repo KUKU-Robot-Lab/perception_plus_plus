@@ -16,7 +16,7 @@ CAND = Path("/home/user/rl_ws/perception_plus_plus/config/robot_camera_extrinsic
 MESH_DIR = Path("/home/user/rl_ws/sim2real/assets/meshes")
 TABLE_Z = 0.205
 #: 물체 → (메시, CAD 원점 높이 m, OpenCV hue 중심) — sim2real config/objects.d 의 값(2026-10-13 확인)
-OBJECTS = {"source240b_blue": ("source240b.obj", 0.085, 100.0), "shaker_c_orange": ("shaker_c.obj", 0.065, 12.0)}
+OBJECTS = {"source240_blue": ("source240_blue.obj", 0.085, 100.0), "shaker_c_orange": ("shaker_c.obj", 0.065, 12.0)}
 
 meshes = {n: trimesh.load(MESH_DIR / f, force="mesh") for n, (f, _, _) in OBJECTS.items()}
 entries = []

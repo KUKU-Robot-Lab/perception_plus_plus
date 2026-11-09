@@ -89,3 +89,8 @@ def test_drop_stale_compares_against_every_earlier_value_not_only_the_last():
     records = [rec(0, 0.1, [0.2, 0.0, 0.55]), rec(1, -15.0, [0.14, 0.0, 0.56]), rec(2, 30.0, [0.2, 0.0, 0.55])]
     kept = survey.drop_stale(records)
     assert [sorted(r["raw_cam"]) for r in kept] == [["cup"], ["cup"], []]
+
+
+def test_drop_stale_renames_old_object_names():
+    rec = {"measured": [0.0, 0.0], "raw_cam": {"source240b_blue": {"pos": [1, 2, 3]}, "shaker_c_orange": {"pos": [0, 0, 0]}}}
+    assert set(survey.drop_stale([rec])[0]["raw_cam"]) == {"source240_blue", "shaker_c_orange"}

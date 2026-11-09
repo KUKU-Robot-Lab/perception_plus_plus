@@ -26,7 +26,7 @@ from perception_plus_plus_core.head_scan import survey  # noqa: E402
 
 HOME_POSE = (0.0, -20.0)
 DEFAULT_POSES = "15,-20;-15,-20;0,-20"
-DEFAULT_OBJECTS = ("source240b_blue", "shaker_c_orange")
+DEFAULT_OBJECTS = ("source240_blue", "shaker_c_orange")
 BUSY_MARKERS = ("episode_ctl", "rh_aglt_node", "pd_right", "pd_left", "policy_control")
 
 

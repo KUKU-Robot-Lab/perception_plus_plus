@@ -17,6 +17,8 @@ _LINE = re.compile(r"^\s*(pan|tilt):\s*목표\s*([+-][\d.]+)°\s*·\s*실제\s*(
 #: 정착 판정(사용자 방침: 명령과 실제 각도는 다를 수 있으니 실측을 쓴다). 정지해 있고 명령에 가까우면 받아들인다.
 MAX_ERR_DEG = 3.0
 MAX_SIGMA_DEG = 0.1
+#: 11.10 이름 통일 전 survey.json 의 옛 물체 이름 → 새 이름(drop_stale 이 읽을 때 바꾼다)
+OLD_NAMES = {"source240b_blue": "source240_blue", "source240p_pink": "source240_pink"}
 
 
 @dataclass(frozen=True)
@@ -57,13 +59,14 @@ def accept(reading: HeadReading, max_err_deg: float = MAX_ERR_DEG, max_sigma_deg
 def drop_stale(records: list[dict], min_move_deg: float = 0.5) -> list[dict]:
     """목이 움직였는데(min_move_deg 초과) 이미 본 값과 위치가 완전히 같은 원시 포즈는 새로 찍히지 않은 낡은 값이라 버린다.
 
-    원본은 바꾸지 않는다. 비교 기준은 같은 물체에서 지금까지 남긴 모든 기록이다(직전 것만이 아니다).
+    원본은 바꾸지 않는다. 옛 물체 이름(OLD_NAMES)은 새 이름으로 바꿔 돌려준다. 비교 기준은 같은 물체에서 지금까지 남긴 모든 기록이다(직전 것만이 아니다).
     """
     kept: list[dict] = []
     seen: dict[str, list[tuple[list[float], list[float]]]] = {}  # 물체 → [(그때의 원시 위치, 그때의 실측 각도)]
     for rec in records:
         fresh = {}
         for name, raw in rec.get("raw_cam", {}).items():
+            name = OLD_NAMES.get(name, name)
             stale = any(pos == raw["pos"] and max(abs(a - b) for a, b in zip(rec["measured"], pose)) > min_move_deg
                         for pos, pose in seen.get(name, []))
             if stale:

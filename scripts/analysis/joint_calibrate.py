@@ -20,7 +20,7 @@ from perception_plus_plus_core.head_scan import head_fk, silhouette_fit as S, su
 
 T = H.T
 MESH_DIR = Path("/home/user/rl_ws/sim2real/assets/meshes")
-OBJECTS = {"source240b_blue": ("source240b.obj", 0.085, 100.0), "shaker_c_orange": ("shaker_c.obj", 0.065, 12.0)}
+OBJECTS = {"source240_blue": ("source240_blue.obj", 0.085, 100.0), "shaker_c_orange": ("shaker_c.obj", 0.065, 12.0)}
 SIL_WEIGHT = 1.0
 MIN_IOU_FOR_FIT = 0.85  # 마스크가 불량한 프레임(tilt -30 등)은 컵 항에서 뺀다
 
